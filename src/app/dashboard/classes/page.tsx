@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useClassesStore } from "@/lib/classes-store";
-import { useAuthStore } from "@/lib/auth-store"; // 👈 NUEVO
-import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+
+import { useClassesStore } from "@/lib/classes-store";
+import { useAuthStore } from "@/lib/auth-store";
+import { supabase } from "@/lib/supabaseClient";
 
 import {
   Card,
@@ -31,6 +33,20 @@ import {
   TableCell,
 } from "@/components/ui/table";
 
+/** Formatea la fecha/hora de la clase para mostrar en la tabla */
+function formatClassDateTime(start_at?: string | null): string {
+  if (!start_at) return "Sin horario";
+  const date = new Date(start_at);
+  if (Number.isNaN(date.getTime())) return "Sin horario";
+
+  return date.toLocaleString("es-CL", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export default function ClassesDashboardPage() {
   const classes = useClassesStore((state) => state.classes);
   const isLoading = useClassesStore((state) => state.isLoading);
@@ -40,9 +56,16 @@ export default function ClassesDashboardPage() {
 
   const [search, setSearch] = useState("");
   const [levelFilter, setLevelFilter] = useState<string>("Todos");
+  const [bookingCounts, setBookingCounts] = useState<Record<string, number>>(
+    {}
+  );
 
-  // 👇 Traemos el perfil desde el auth-store
-  const { profile } = useAuthStore();
+  // auth / rol
+  const { user, profile } = useAuthStore();
+  const userEmail = user?.email ?? null;
+  const isInstructor = profile?.role === "instructor";
+  const isAdmin = profile?.role === "admin";
+
   const roleLabel =
     profile?.role === "admin"
       ? "Administrador/a"
@@ -50,12 +73,21 @@ export default function ClassesDashboardPage() {
       ? "Instructor/a"
       : "Alumna";
 
+  // cargar clases
   useEffect(() => {
     fetchClasses();
   }, [fetchClasses]);
 
+  // clases filtradas por rol + filtros de búsqueda
   const filteredClasses = useMemo(() => {
-    return classes.filter((cls) => {
+    let result = classes;
+
+    // Si es instructor, solo ve sus clases
+    if (isInstructor && userEmail) {
+      result = result.filter((cls) => cls.instructorEmail === userEmail);
+    }
+
+    return result.filter((cls) => {
       const matchesLevel =
         levelFilter === "Todos" || cls.level === levelFilter;
 
@@ -66,7 +98,43 @@ export default function ClassesDashboardPage() {
 
       return matchesLevel && matchesSearch;
     });
-  }, [classes, levelFilter, search]);
+  }, [classes, isInstructor, userEmail, levelFilter, search]);
+
+  // cargar conteo de reservas para las clases visibles
+  useEffect(() => {
+    async function loadBookingCounts() {
+      if (filteredClasses.length === 0) {
+        setBookingCounts({});
+        return;
+      }
+
+      const classIds = filteredClasses.map((cls) => cls.id);
+
+      const { data, error } = await supabase
+        .from("bookings")
+        .select("classId")
+        .in("classId", classIds);
+
+      if (error) {
+        console.error(
+          "Error al obtener conteo de reservas:",
+          error.message,
+          error.details,
+          error.hint
+        );
+        return;
+      }
+
+      const counts: Record<string, number> = {};
+      (data as { classId: string }[]).forEach((row) => {
+        counts[row.classId] = (counts[row.classId] ?? 0) + 1;
+      });
+
+      setBookingCounts(counts);
+    }
+
+    void loadBookingCounts();
+  }, [filteredClasses]);
 
   return (
     <div className="p-6 md:p-10 max-w-5xl mx-auto space-y-6">
@@ -90,11 +158,15 @@ export default function ClassesDashboardPage() {
         </Button>
       </div>
 
-      {/* 👇 Aviso de rol actual */}
+      {/* Aviso de rol actual */}
       {profile && (
         <div className="mb-2 rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-2 text-xs text-emerald-800">
           Estás usando el dashboard como{" "}
           <span className="font-semibold">{roleLabel}</span>.
+          {isInstructor && (
+            <> Solo verás las clases que tú impartes.</>
+          )}
+          {isAdmin && <> Tienes acceso a todas las clases del estudio.</>}
         </div>
       )}
 
@@ -161,12 +233,14 @@ export default function ClassesDashboardPage() {
             </div>
           )}
 
-          {!isLoading && classes.length > 0 && filteredClasses.length === 0 && (
-            <p className="text-sm text-muted-foreground py-6">
-              No encontramos clases que coincidan con los filtros actuales.
-              Prueba con otro nivel o busca por otra palabra clave.
-            </p>
-          )}
+          {!isLoading &&
+            classes.length > 0 &&
+            filteredClasses.length === 0 && (
+              <p className="text-sm text-muted-foreground py-6">
+                No encontramos clases que coincidan con los filtros actuales.
+                Prueba con otro nivel o busca por otra palabra clave.
+              </p>
+            )}
 
           {!isLoading && filteredClasses.length > 0 && (
             <div className="overflow-x-auto">
@@ -175,32 +249,56 @@ export default function ClassesDashboardPage() {
                   <TableRow>
                     <TableHead>Título</TableHead>
                     <TableHead>Nivel</TableHead>
+                    <TableHead>Horario</TableHead>
                     <TableHead>Descripción</TableHead>
+                    <TableHead className="text-right">
+                      Reservas / cupos
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredClasses.map((cls) => (
-                    <TableRow
-                      key={cls.id}
-                      className="cursor-pointer hover:bg-emerald-50/40"
-                      onClick={() =>
-                        router.push(`/dashboard/classes/${cls.id}`)
-                      }
-                    >
-                      <TableCell className="font-medium">
-                        {cls.title}
-                      </TableCell>
-                      <TableCell className="text-xs md:text-sm">
-                        {cls.level}
-                      </TableCell>
-                      <TableCell className="text-xs md:text-sm text-muted-foreground">
-                        {cls.description?.slice(0, 80)}
-                        {cls.description && cls.description.length > 80
-                          ? "…"
-                          : ""}
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {filteredClasses.map((cls) => {
+                    const bookingsCount = bookingCounts[cls.id] ?? 0;
+                    const capacity =
+                      cls.capacity !== undefined && cls.capacity !== null
+                        ? cls.capacity
+                        : null;
+
+                    return (
+                      <TableRow
+                        key={cls.id}
+                        className="cursor-pointer hover:bg-emerald-50/40"
+                        onClick={() =>
+                          router.push(`/dashboard/classes/${cls.id}`)
+                        }
+                      >
+                        <TableCell className="font-medium">
+                          {cls.title}
+                        </TableCell>
+
+                        <TableCell className="text-xs md:text-sm">
+                          {cls.level}
+                        </TableCell>
+
+                        <TableCell className="text-xs md:text-sm text-muted-foreground">
+                          {formatClassDateTime(cls.start_at)}
+                        </TableCell>
+
+                        <TableCell className="text-xs md:text-sm text-muted-foreground">
+                          {cls.description?.slice(0, 80)}
+                          {cls.description && cls.description.length > 80
+                            ? "…"
+                            : ""}
+                        </TableCell>
+
+                        <TableCell className="text-right text-xs md:text-sm font-medium">
+                          {capacity !== null
+                            ? `${bookingsCount}/${capacity}`
+                            : bookingsCount}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>

@@ -7,12 +7,23 @@ export type ClassItem = {
   level: string;
   description: string;
   created_at: string;
+  instructorEmail?: string | null;
+
+  // NUEVO: programación de la clase
+  start_at?: string | null;
+  duration_minutes?: number | null;
+  capacity?: number | null;
 };
 
 type NewClassInput = {
   title: string;
   level: string;
   description: string;
+  instructorEmail?: string | null;
+
+  start_at?: string | null;
+  duration_minutes?: number | null;
+  capacity?: number | null;
 };
 
 type ClassesState = {
@@ -54,6 +65,10 @@ export const useClassesStore = create<ClassesState>((set) => ({
         title: data.title,
         level: data.level,
         description: data.description,
+        instructorEmail: data.instructorEmail ?? null,
+        start_at: data.start_at ?? null,
+        duration_minutes: data.duration_minutes ?? null,
+        capacity: data.capacity ?? null,
       })
       .select()
       .single();
@@ -73,7 +88,15 @@ export const useClassesStore = create<ClassesState>((set) => ({
   updateClass: async (id, data) => {
     const { data: updated, error } = await supabase
       .from("classes")
-      .update(data)
+      .update({
+        title: data.title,
+        level: data.level,
+        description: data.description,
+        instructorEmail: data.instructorEmail,
+        start_at: data.start_at,
+        duration_minutes: data.duration_minutes,
+        capacity: data.capacity,
+      })
       .eq("id", id)
       .select()
       .single();

@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useClassesStore } from "@/lib/classes-store";
 import { useRouter } from "next/navigation";
+
+import { useClassesStore } from "@/lib/classes-store";
+import { useAuthStore } from "@/lib/auth-store";
 
 import {
   Card,
@@ -28,9 +30,21 @@ export default function PublicClassesPage() {
 
   const router = useRouter();
 
+  // 👇 auth / rol
+  const { profile, initialized, init } = useAuthStore();
+  const role = profile?.role;
+
   const [search, setSearch] = useState("");
   const [levelFilter, setLevelFilter] = useState<string>("Todos");
 
+  // inicializar auth-store (para saber rol)
+  useEffect(() => {
+    if (!initialized) {
+      init();
+    }
+  }, [initialized, init]);
+
+  // cargar clases
   useEffect(() => {
     fetchClasses();
   }, [fetchClasses]);
@@ -48,6 +62,31 @@ export default function PublicClassesPage() {
       return matchesLevel && matchesSearch;
     });
   }, [classes, levelFilter, search]);
+
+  // qué hacer al apretar el botón principal de una card
+  function handlePrimaryAction(classId: string) {
+    // Alumna → a su agenda, donde reserva de verdad
+    if (role === "alumna") {
+      router.push("/dashboard/alumna");
+      return;
+    }
+
+    // Admin / instructor → detalle de esa clase en el dashboard
+    if (role === "admin" || role === "instructor") {
+      router.push(`/dashboard/classes/${classId}`);
+      return;
+    }
+
+    // Invitado / sin login → al login
+    router.push("/login");
+  }
+
+  // texto del botón según rol
+  function getPrimaryLabel() {
+    if (role === "alumna") return "Reservar desde mi agenda";
+    if (role === "admin" || role === "instructor") return "Ver en el dashboard";
+    return "Iniciar sesión para reservar";
+  }
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-emerald-50/40 to-white">
@@ -116,8 +155,7 @@ export default function PublicClassesPage() {
               {filteredClasses.map((cls) => (
                 <Card
                   key={cls.id}
-                  className="border-emerald-50 hover:border-emerald-200 hover:shadow-sm transition cursor-pointer flex flex-col"
-                  onClick={() => router.push(`/dashboard/classes/${cls.id}`)}
+                  className="border-emerald-50 hover:border-emerald-200 hover:shadow-sm transition flex flex-col"
                 >
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between gap-2">
@@ -137,12 +175,9 @@ export default function PublicClassesPage() {
                       variant="outline"
                       size="sm"
                       className="w-full"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        router.push(`/dashboard/classes/${cls.id}`);
-                      }}
+                      onClick={() => handlePrimaryAction(cls.id)}
                     >
-                      Ver detalles de la clase
+                      {getPrimaryLabel()}
                     </Button>
                   </CardContent>
                 </Card>

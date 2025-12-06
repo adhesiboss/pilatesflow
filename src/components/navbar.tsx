@@ -23,7 +23,7 @@ function getInitials(email: string | null): string {
 
 function getRoleLabel(role: "admin" | "instructor" | "alumna" | undefined) {
   if (!role) return "";
-  if (role === "admin") return "Admin";
+  if (role === "admin") return "Administrador/a";
   if (role === "instructor") return "Instructor/a";
   return "Alumna";
 }
@@ -33,8 +33,10 @@ export default function Navbar() {
 
   // Nos aseguramos de que el store se inicialice también en rutas públicas
   useEffect(() => {
-    init();
-  }, [init]);
+    if (!initialized) {
+      init();
+    }
+  }, [initialized, init]);
 
   const userEmail = user?.email ?? null;
   const shortEmail =
@@ -66,8 +68,9 @@ export default function Navbar() {
 
           {initialized && user ? (
             <>
+              {/* 👇 ahora va al router de roles */}
               <Link
-                href="/dashboard/classes"
+                href="/dashboard"
                 className="text-xs md:text-sm text-muted-foreground hover:text-foreground"
               >
                 Dashboard
@@ -81,10 +84,10 @@ export default function Navbar() {
                 <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-semibold text-emerald-700">
                   {getInitials(userEmail)}
                 </span>
-                <div className="flex flex-col">
+                <div className="flex flex-col leading-tight">
                   <span className="hidden sm:inline">{shortEmail}</span>
                   {roleLabel && (
-                    <span className="text-[10px] text-emerald-700">
+                    <span className="text-[10px] font-semibold text-emerald-700">
                       {roleLabel}
                     </span>
                   )}
@@ -129,8 +132,9 @@ export default function Navbar() {
 
                 {initialized && user ? (
                   <>
+                    {/* 👇 también aquí usamos /dashboard */}
                     <Link
-                      href="/dashboard/classes"
+                      href="/dashboard"
                       className="text-sm text-muted-foreground hover:text-foreground"
                     >
                       Dashboard
@@ -143,10 +147,10 @@ export default function Navbar() {
                       <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 text-[11px] font-semibold text-emerald-700">
                         {getInitials(userEmail)}
                       </span>
-                      <div className="flex flex-col">
+                      <div className="flex flex-col leading-tight">
                         <span>{shortEmail}</span>
                         {roleLabel && (
-                          <span className="text-[11px] text-emerald-700">
+                          <span className="text-[11px] font-semibold text-emerald-700">
                             {roleLabel}
                           </span>
                         )}

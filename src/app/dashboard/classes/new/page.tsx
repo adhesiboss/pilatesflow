@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { useClassesStore } from "@/lib/classes-store";
 import { useRouter } from "next/navigation";
+
+import { useClassesStore } from "@/lib/classes-store";
+import { useAuthStore } from "@/lib/auth-store";
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -28,16 +30,42 @@ export default function NewClassPage() {
   const addClass = useClassesStore((state) => state.addClass);
   const router = useRouter();
 
+  const { user, profile } = useAuthStore();
+  const instructorEmail = user?.email ?? null;
+  const isAdmin = profile?.role === "admin";
+
   const [title, setTitle] = useState("");
   const [level, setLevel] = useState("Básico");
   const [description, setDescription] = useState("");
+
+  const [startAt, setStartAt] = useState<string>(""); // datetime-local
+  const [durationMinutes, setDurationMinutes] = useState<string>("60");
+  const [capacity, setCapacity] = useState<string>("10");
+
   const [isSaving, setIsSaving] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setIsSaving(true);
 
-    const created = await addClass({ title, level, description });
+    // convertir a tipos correctos
+    const parsedDuration =
+      durationMinutes.trim() === "" ? null : Number(durationMinutes);
+    const parsedCapacity =
+      capacity.trim() === "" ? null : Number(capacity);
+
+    // datetime-local → ISO
+    const startAtIso = startAt ? new Date(startAt).toISOString() : null;
+
+    const created = await addClass({
+      title,
+      level,
+      description,
+      instructorEmail,
+      start_at: startAtIso,
+      duration_minutes: Number.isNaN(parsedDuration) ? null : parsedDuration,
+      capacity: Number.isNaN(parsedCapacity) ? null : parsedCapacity,
+    });
 
     setIsSaving(false);
 
@@ -64,9 +92,22 @@ export default function NewClassPage() {
             Diseña una sesión de Pilates
           </CardTitle>
           <CardDescription>
-            Define el nivel, enfoque y descripción de la clase que tus alumnas
+            Define el nivel, horario, cupos y descripción de la clase que tus alumnas
             verán en la plataforma.
           </CardDescription>
+
+          {instructorEmail && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Esta clase quedará asignada a{" "}
+              <span className="font-medium text-emerald-700">
+                {instructorEmail}
+              </span>{" "}
+              como instructor/a.
+              {isAdmin && (
+                <> (más adelante podrás cambiar el instructor desde la edición)</>
+              )}
+            </p>
+          )}
         </CardHeader>
 
         <CardContent>
@@ -97,6 +138,48 @@ export default function NewClassPage() {
                   </SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* NUEVO: Horario */}
+            <div className="space-y-1.5">
+              <Label htmlFor="start_at">Fecha y hora</Label>
+              <Input
+                id="start_at"
+                type="datetime-local"
+                value={startAt}
+                onChange={(e) => setStartAt(e.target.value)}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Si lo dejas vacío, se mostrará como clase sin horario definido.
+              </p>
+            </div>
+
+            {/* NUEVO: Duración */}
+            <div className="space-y-1.5">
+              <Label htmlFor="duration">Duración (minutos)</Label>
+              <Input
+                id="duration"
+                type="number"
+                min={0}
+                value={durationMinutes}
+                onChange={(e) => setDurationMinutes(e.target.value)}
+              />
+            </div>
+
+            {/* NUEVO: Cupos */}
+            <div className="space-y-1.5">
+              <Label htmlFor="capacity">Cupos (alumnas)</Label>
+              <Input
+                id="capacity"
+                type="number"
+                min={0}
+                value={capacity}
+                onChange={(e) => setCapacity(e.target.value)}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Puedes dejarlo vacío para no limitar los cupos (más adelante podemos
+                bloquear las reservas cuando se llene).
+              </p>
             </div>
 
             <div className="space-y-1.5">
