@@ -3,11 +3,17 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
-import { useClassesStore, type ClassItem } from "@/lib/classes-store";
-import { supabase } from "@/lib/supabaseClient";
-import { useAuthStore } from "@/lib/auth-store";
-import { useBookingsStore } from "@/lib/bookings-store";
+import {
+  useClassesStore,
+  type ClassItem,
+} from "@/lib/classes-store";
 
+import { supabase } from "@/lib/supabaseClient";
+
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Card,
   CardHeader,
@@ -15,10 +21,6 @@ import {
   CardDescription,
   CardContent,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectTrigger,
@@ -28,66 +30,70 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 
-export default function ClassDetailDashboardPage() {
+const PILATES_DISCIPLINES = [
+  "Mat",
+  "Reformer",
+  "Suelo",
+  "Aparatos",
+  "Embarazo",
+  "Postparto",
+  "Estiramiento",
+  "Fuerza y centro",
+];
+
+// helper para mostrar video
+function renderVideo(url: string) {
+  const youtubeMatch = url.match(
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]+)/
+  );
+
+  if (youtubeMatch && youtubeMatch[1]) {
+    const videoId = youtubeMatch[1];
+    const embedUrl = `https://www.youtube.com/embed/${videoId}`;
+
+    return (
+      <iframe
+        src={embedUrl}
+        className="h-full w-full"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+        allowFullScreen
+        title="Video de la clase"
+      />
+    );
+  }
+
+  return (
+    <video controls className="h-full w-full">
+      <source src={url} />
+      Tu navegador no soporta la reproducción de video.
+    </video>
+  );
+}
+
+export default function EditClassPage() {
   const params = useParams();
   const router = useRouter();
   const id = (params as { id: string }).id;
 
-  // store de clases
-  const { classes, isLoading, fetchClasses, updateClass, removeClass } =
-    useClassesStore();
-
-  // auth / rol
-  const { user, profile, initialized, init } = useAuthStore();
-
-  // bookings de esta clase
-  const {
-    bookings,
-    isLoading: isLoadingBookings,
-    fetchBookingsForClass,
-  } = useBookingsStore();
+  const classes = useClassesStore((state) => state.classes);
+  const updateClass = useClassesStore((state) => state.updateClass);
+  const removeClass = useClassesStore((state) => state.removeClass);
 
   const [cls, setCls] = useState<ClassItem | null>(null);
-  const [isLoadingClass, setIsLoadingClass] = useState(true);
-
-  // estado del form
-  const [title, setTitle] = useState("");
-  const [level, setLevel] = useState("Básico");
-  const [description, setDescription] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // init auth-store
-  useEffect(() => {
-    if (!initialized) {
-      init();
-    }
-  }, [initialized, init]);
+  const [title, setTitle] = useState("");
+  const [level, setLevel] = useState("Básico");
+  const [description, setDescription] = useState("");
+  const [videoUrl, setVideoUrl] = useState("");
+  const [discipline, setDiscipline] = useState<string>(""); // 👈 NUEVO
 
-  // guard: solo admin / instructor
-  useEffect(() => {
-    if (!initialized) return;
-
-    if (!user || !profile) {
-      router.replace("/login");
-      return;
-    }
-
-    if (profile.role === "alumna") {
-      router.replace("/dashboard/alumna");
-      return;
-    }
-  }, [initialized, user, profile, router]);
-
-  // cargar clases en el store (si aún no están)
-  useEffect(() => {
-    fetchClasses();
-  }, [fetchClasses]);
-
-  // cargar clase concreta (store → fallback supabase) y sincronizar form
   useEffect(() => {
     async function load() {
-      setIsLoadingClass(true);
+      if (!id) return;
+      setIsLoading(true);
 
       const fromStore = classes.find((c) => c.id === id);
       if (fromStore) {
@@ -95,7 +101,9 @@ export default function ClassDetailDashboardPage() {
         setTitle(fromStore.title);
         setLevel(fromStore.level);
         setDescription(fromStore.description ?? "");
-        setIsLoadingClass(false);
+        setVideoUrl(fromStore.video_url ?? "");
+        setDiscipline(fromStore.discipline ?? ""); // 👈
+        setIsLoading(false);
         return;
       }
 
@@ -106,49 +114,40 @@ export default function ClassDetailDashboardPage() {
         .single();
 
       if (error) {
-        console.error("Error cargando clase en dashboard:", error);
+        console.error("Error al cargar clase en edición:", error);
+        toast.error("No pudimos cargar la clase");
         setCls(null);
-      } else {
-        const loaded = data as ClassItem;
-        setCls(loaded);
-        setTitle(loaded.title);
-        setLevel(loaded.level);
-        setDescription(loaded.description ?? "");
+        setIsLoading(false);
+        return;
       }
-      setIsLoadingClass(false);
+
+      const loaded = data as ClassItem;
+      setCls(loaded);
+      setTitle(loaded.title);
+      setLevel(loaded.level);
+      setDescription(loaded.description ?? "");
+      setVideoUrl(loaded.video_url ?? "");
+      setDiscipline(loaded.discipline ?? ""); // 👈
+      setIsLoading(false);
     }
 
-    if (id) {
-      void load();
-    }
-  }, [classes, id]);
-
-  // cargar reservas de esta clase
-  useEffect(() => {
-    if (!id) return;
-    void fetchBookingsForClass(id);
-  }, [id, fetchBookingsForClass]);
-
-  const createdAt = cls?.created_at
-    ? new Date(cls.created_at).toLocaleDateString("es-CL", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      })
-    : "";
-
-  const totalBookings = bookings.length;
+    void load();
+  }, [id, classes]);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!cls) return;
 
     setIsSaving(true);
+
     await updateClass(cls.id, {
       title,
       level,
       description,
+      video_url: videoUrl.trim() || null,
+      discipline: discipline || null, // 👈 NUEVO
     });
+
     setIsSaving(false);
 
     toast.success("Clase actualizada", {
@@ -158,102 +157,89 @@ export default function ClassDetailDashboardPage() {
 
   async function handleDelete() {
     if (!cls) return;
-    const ok = confirm(
+
+    const confirmed = window.confirm(
       "¿Seguro que quieres eliminar esta clase? Esta acción no se puede deshacer."
     );
-    if (!ok) return;
+
+    if (!confirmed) return;
 
     setIsDeleting(true);
     await removeClass(cls.id);
     setIsDeleting(false);
 
-    toast.success("Clase eliminada");
+    toast("Clase eliminada", {
+      description: "La clase se eliminó del catálogo.",
+    });
+
     router.push("/dashboard/classes");
   }
 
-  if (!initialized || isLoadingClass) {
+  if (isLoading) {
     return (
-      <div className="min-h-[calc(100vh-3.5rem)] bg-gradient-to-b from-emerald-50/40 to-white">
-        <div className="mx-auto max-w-3xl px-4 py-12">
-          <p className="text-sm text-muted-foreground">
-            Cargando detalles de la clase…
-          </p>
-        </div>
+      <div className="p-6 md:p-10 max-w-3xl mx-auto">
+        <p className="text-sm text-muted-foreground">
+          Cargando datos de la clase…
+        </p>
       </div>
     );
   }
 
-  if (!cls && !isLoading) {
+  if (!cls) {
     return (
-      <div className="min-h-[calc(100vh-3.5rem)] bg-gradient-to-b from-emerald-50/40 to-white">
-        <div className="mx-auto max-w-3xl px-4 py-12">
-          <Card>
-            <CardHeader>
-              <CardTitle>Clase no encontrada</CardTitle>
-              <CardDescription>
-                Es posible que esta clase haya sido eliminada o que el enlace no
-                sea válido.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button onClick={() => router.push("/dashboard/classes")}>
-                Volver al listado de clases
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
+      <div className="p-6 md:p-10 max-w-3xl mx-auto">
+        <Card>
+          <CardHeader>
+            <CardTitle>Clase no encontrada</CardTitle>
+            <CardDescription>
+              Es posible que esta clase haya sido eliminada o que el enlace no
+              sea válido.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={() => router.push("/dashboard/classes")}>
+              Volver al listado
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
+
+  const trimmedVideoUrl = videoUrl.trim();
 
   return (
-    <div className="min-h-[calc(100vh-3.5rem)] bg-gradient-to-b from-emerald-50/40 to-white">
-      <div className="mx-auto max-w-5xl px-4 py-10 space-y-6">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="px-0 text-muted-foreground hover:text-foreground"
-          onClick={() => router.push("/dashboard/classes")}
-        >
-          ← Volver al dashboard de clases
-        </Button>
+    <div className="p-6 md:p-10 max-w-3xl mx-auto">
+      <Card className="border-emerald-50 shadow-sm">
+        <CardHeader>
+          <p className="text-xs font-semibold tracking-[0.2em] text-emerald-500 uppercase">
+            Editar clase
+          </p>
+          <CardTitle className="mt-1 text-2xl">{cls.title}</CardTitle>
+          <CardDescription>
+            Ajusta el contenido de la clase, nivel, disciplina, descripción y
+            video asociado.
+          </CardDescription>
+        </CardHeader>
 
-        {/* Formulario de edición */}
-        <Card className="border-emerald-50 shadow-sm">
-          <CardHeader className="space-y-1.5">
-            <CardTitle className="text-lg md:text-xl">
-              Editar clase
-            </CardTitle>
-            <CardDescription>
-              Ajusta el título, nivel y descripción de esta clase. Los cambios
-              se verán reflejados en el catálogo y en la agenda de alumnas.
-            </CardDescription>
-            {createdAt && (
-              <p className="text-xs text-muted-foreground">
-                Creada el{" "}
-                <span className="font-medium">
-                  {createdAt}
-                </span>
-              </p>
-            )}
-          </CardHeader>
+        <CardContent>
+          <form className="space-y-5" onSubmit={handleSave}>
+            <div className="space-y-1.5">
+              <Label htmlFor="title">Título de la clase</Label>
+              <Input
+                id="title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Ej: Pilates Mat Suave para la Mañana"
+                required
+              />
+            </div>
 
-          <CardContent>
-            <form className="space-y-5" onSubmit={handleSave}>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div className="space-y-1.5">
-                <Label htmlFor="title">Título de la clase</Label>
-                <Input
-                  id="title"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label>Nivel</Label>
+                <Label htmlFor="level">Nivel</Label>
                 <Select value={level} onValueChange={(value) => setLevel(value)}>
-                  <SelectTrigger>
+                  <SelectTrigger id="level">
                     <SelectValue placeholder="Selecciona el nivel" />
                   </SelectTrigger>
                   <SelectContent>
@@ -267,18 +253,72 @@ export default function ClassDetailDashboardPage() {
                 </Select>
               </div>
 
+              {/* Disciplina */}
               <div className="space-y-1.5">
-                <Label htmlFor="description">Descripción</Label>
-                <Textarea
-                  id="description"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={4}
-                  placeholder="Describe brevemente el enfoque, intensidad o material necesario para esta clase."
-                />
+                <Label>Disciplina</Label>
+                <Select
+                  value={discipline}
+                  onValueChange={(value) => setDiscipline(value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona la disciplina" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PILATES_DISCIPLINES.map((d) => (
+                      <SelectItem key={d} value={d}>
+                        {d}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
+            </div>
 
-              <div className="flex items-center justify-between gap-3 pt-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="description">Descripción</Label>
+              <Textarea
+                id="description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Describe el enfoque, la intensidad y los objetivos de esta clase."
+                rows={4}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="video_url">Link del video (opcional)</Label>
+              <Input
+                id="video_url"
+                value={videoUrl}
+                onChange={(e) => setVideoUrl(e.target.value)}
+                placeholder="URL del video asociado a esta clase (YouTube o .mp4)"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Puedes pegar un enlace directo a un archivo .mp4 o un link de
+                YouTube.
+              </p>
+
+              {trimmedVideoUrl && (
+                <div className="mt-2 space-y-1">
+                  <p className="text-[11px] text-muted-foreground">
+                    Previsualización:
+                  </p>
+                  <div className="aspect-video w-full overflow-hidden rounded-lg border bg-black/5">
+                    {renderVideo(trimmedVideoUrl)}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-between gap-2 pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => router.push("/dashboard/classes")}
+              >
+                Volver al listado
+              </Button>
+              <div className="flex gap-2">
                 <Button
                   type="button"
                   variant="destructive"
@@ -287,65 +327,14 @@ export default function ClassDetailDashboardPage() {
                 >
                   {isDeleting ? "Eliminando…" : "Eliminar clase"}
                 </Button>
-
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => router.push("/dashboard/classes")}
-                  >
-                    Cancelar
-                  </Button>
-                  <Button type="submit" disabled={isSaving}>
-                    {isSaving ? "Guardando…" : "Guardar cambios"}
-                  </Button>
-                </div>
+                <Button type="submit" disabled={isSaving}>
+                  {isSaving ? "Guardando…" : "Guardar cambios"}
+                </Button>
               </div>
-            </form>
-          </CardContent>
-        </Card>
-
-        {/* Alumnas inscritas */}
-        <Card className="border-emerald-50 shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-base md:text-lg">
-              Alumnas inscritas ({totalBookings})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isLoadingBookings && (
-              <p className="text-sm text-muted-foreground">
-                Cargando reservas de esta clase…
-              </p>
-            )}
-
-            {!isLoadingBookings && totalBookings === 0 && (
-              <p className="text-sm text-muted-foreground">
-                Aún no hay alumnas inscritas en esta clase.
-              </p>
-            )}
-
-            {!isLoadingBookings && totalBookings > 0 && (
-              <ul className="space-y-2 text-sm">
-                {bookings.map((b) => (
-                  <li
-                    key={b.id}
-                    className="flex items-center justify-between rounded-md border border-emerald-50 bg-emerald-50/40 px-3 py-2"
-                  >
-                    <div className="flex flex-col">
-                      <span className="font-medium">{b.userEmail}</span>
-                      <span className="text-xs text-muted-foreground">
-                        Reservó el{" "}
-                        {new Date(b.created_at).toLocaleString("es-CL")}
-                      </span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

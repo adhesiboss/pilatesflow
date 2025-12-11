@@ -8,7 +8,7 @@ import { useClassesStore } from "@/lib/classes-store";
 import { useBookingsStore } from "@/lib/bookings-store";
 import { supabase } from "@/lib/supabaseClient";
 
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -27,6 +27,12 @@ function getRoleLabel(role: "admin" | "instructor" | "alumna" | undefined) {
   return "Alumna";
 }
 
+function getPlanLabel(plan: "free" | "activa" | undefined | null) {
+  if (!plan) return "Plan Free";
+  if (plan === "activa") return "Plan Activa";
+  return "Plan Free";
+}
+
 function formatClassDateTime(start_at?: string | null): string {
   if (!start_at) return "Sin horario";
   const date = new Date(start_at);
@@ -39,6 +45,12 @@ function formatClassDateTime(start_at?: string | null): string {
     minute: "2-digit",
   });
 }
+
+// límites de reservas por plan
+const PLAN_LIMITS: Record<string, number> = {
+  free: 4,
+  activa: 12,
+};
 
 export default function AlumnaDashboardPage() {
   const router = useRouter();
@@ -60,7 +72,7 @@ export default function AlumnaDashboardPage() {
   const [search, setSearch] = useState("");
   const [levelFilter, setLevelFilter] = useState<string>("Todos");
 
-  // 👇 nuevo: conteo de reservas por clase
+  // conteo de reservas por clase
   const [bookingCounts, setBookingCounts] = useState<Record<string, number>>(
     {}
   );
@@ -68,7 +80,7 @@ export default function AlumnaDashboardPage() {
   // init auth
   useEffect(() => {
     if (!initialized) {
-      init();
+      void init();
     }
   }, [initialized, init]);
 
@@ -89,16 +101,16 @@ export default function AlumnaDashboardPage() {
 
   // cargar clases
   useEffect(() => {
-    fetchClasses();
+    void fetchClasses();
   }, [fetchClasses]);
 
   // cargar reservas de la alumna
   useEffect(() => {
     if (!userEmail) return;
-    fetchBookingsForUser(userEmail);
+    void fetchBookingsForUser(userEmail);
   }, [userEmail, fetchBookingsForUser]);
 
-  // cargar conteo de reservas por clase (para TODOS los ids que existen)
+  // cargar conteo de reservas por clase
   useEffect(() => {
     async function loadBookingCounts() {
       if (classes.length === 0) {
@@ -135,6 +147,7 @@ export default function AlumnaDashboardPage() {
   }, [classes]);
 
   const roleLabel = getRoleLabel(profile?.role);
+  const planLabel = getPlanLabel(profile?.plan ?? "free");
 
   const bookedClassIds = useMemo(
     () => new Set(bookings.map((b) => b.classId)),
@@ -160,10 +173,36 @@ export default function AlumnaDashboardPage() {
     });
   }, [classes, levelFilter, search]);
 
+  // lógica de límite por plan
+  const bookingsCount = bookings.length;
+  const planKey = (profile?.plan ?? "free").toLowerCase();
+  const planMaxBookings = PLAN_LIMITS[planKey] ?? null;
+  const hasReachedPlanLimit =
+    planMaxBookings !== null && bookingsCount >= planMaxBookings;
+
+  const planUsagePercent =
+    planMaxBookings && planMaxBookings > 0
+      ? Math.min(100, Math.round((bookingsCount / planMaxBookings) * 100))
+      : 0;
+
   const handleToggleBooking = async (classId: string) => {
     if (!userEmail) {
       toast.error("Debes iniciar sesión para reservar una clase.");
       router.push("/login");
+      return;
+    }
+
+    const alreadyBooked = bookedClassIds.has(classId);
+
+    // si quiere reservar (no cancelar) y ya llegó al límite de su plan
+    if (!alreadyBooked && hasReachedPlanLimit) {
+      if (planMaxBookings !== null) {
+        toast.error("Has alcanzado el límite de tu plan", {
+          description: `Tu plan actual permite ${planMaxBookings} reservas activas. Cancela alguna reserva para agendar una nueva.`,
+        });
+      } else {
+        toast.error("No puedes reservar más clases por ahora.");
+      }
       return;
     }
 
@@ -198,229 +237,329 @@ export default function AlumnaDashboardPage() {
   }
 
   return (
-    <div className="p-6 md:p-10 max-w-5xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div>
-          <p className="text-xs font-semibold tracking-[0.2em] text-emerald-500 uppercase">
-            Mi agenda
-          </p>
-          <h1 className="text-2xl md:text-3xl font-semibold mt-1">
-            Clases disponibles
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Explora el catálogo y reserva tus próximas sesiones de Pilates.
-          </p>
-        </div>
-
-        {roleLabel && (
-          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            {roleLabel}
-          </div>
-        )}
-      </div>
-
-      {/* Mis próximas clases */}
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold">Mis próximas clases</h2>
-
-        {isLoadingBookings && (
-          <p className="text-xs text-muted-foreground">
-            Cargando tus reservas…
-          </p>
-        )}
-
-        {!isLoadingBookings && bookedClasses.length === 0 && (
-          <p className="text-xs text-muted-foreground">
-            Aún no tienes clases reservadas. Elige una clase disponible y
-            resérvala para sumarla a tu agenda.
-          </p>
-        )}
-
-        {!isLoadingBookings && bookedClasses.length > 0 && (
-          <div className="grid gap-3 md:grid-cols-2">
-            {bookedClasses.map((cls) => {
-              const bookingsCount = bookingCounts[cls.id] ?? 0;
-              const capacity =
-                cls.capacity !== undefined && cls.capacity !== null
-                  ? cls.capacity
-                  : null;
-              const isFull =
-                capacity !== null && bookingsCount >= capacity;
-
-              return (
-                <Card
-                  key={cls.id}
-                  className="border-emerald-100 bg-emerald-50/40"
-                >
-                  <CardHeader className="pb-2 flex flex-row items-start justify-between gap-2">
-                    <div>
-                      <CardTitle className="text-sm md:text-base">
-                        {cls.title}
-                      </CardTitle>
-                      <p className="mt-0.5 text-[11px] text-muted-foreground">
-                        {formatClassDateTime(cls.start_at)}
-                      </p>
-                    </div>
-                    {isFull && (
-                      <span className="inline-flex items-center rounded-full border border-red-100 bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-700">
-                        Clase llena
-                      </span>
-                    )}
-                  </CardHeader>
-                  <CardContent className="space-y-2 text-xs md:text-sm">
-                    <p className="text-muted-foreground">
-                      {cls.description || "Clase de Pilates del estudio."}
-                    </p>
-                    <p>
-                      Nivel:{" "}
-                      <span className="font-semibold text-emerald-700">
-                        {cls.level}
-                      </span>
-                    </p>
-                    <p className="text-[11px] text-muted-foreground">
-                      Cupos:{" "}
-                      <span className="font-semibold text-emerald-700">
-                        {capacity !== null
-                          ? `${bookingsCount}/${capacity}`
-                          : bookingsCount}
-                      </span>
-                    </p>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="mt-1"
-                      onClick={() => handleToggleBooking(cls.id)}
-                    >
-                      Cancelar reserva
-                    </Button>
-                  </CardContent>
-                </Card>
-            );
-            })}
-          </div>
-        )}
-      </section>
-
-      {/* Filtros + listado general */}
-      <section className="space-y-4 pt-4 border-t">
+    <div className="min-h-[calc(100vh-3.5rem)] bg-gradient-to-b from-emerald-50/40 to-white">
+      <div className="p-6 md:p-10 max-w-5xl mx-auto space-y-6">
+        {/* Header */}
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex-1">
-            <Input
-              placeholder="Buscar por título o descripción…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full"
-            />
+          <div>
+            <p className="text-xs font-semibold tracking-[0.2em] text-emerald-500 uppercase">
+              Mi práctica
+            </p>
+            <h1 className="text-2xl md:text-3xl font-semibold mt-1">
+              Tus clases de Pilates
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1 max-w-md">
+              Elige una clase, marca lo que ya practicaste y ve tu progreso
+              avanzar con cada sesión.
+            </p>
           </div>
 
-          <div className="w-full md:w-52">
-            <Select
-              value={levelFilter}
-              onValueChange={(value) => setLevelFilter(value)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Filtrar por nivel" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Todos">Todos los niveles</SelectItem>
-                <SelectItem value="Básico">Básico</SelectItem>
-                <SelectItem value="Intermedio">Intermedio</SelectItem>
-                <SelectItem value="Avanzado">Avanzado</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="flex flex-col items-start gap-2 md:items-end">
+            {roleLabel && (
+              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                {roleLabel}
+              </div>
+            )}
+
+            {/* Badge de plan */}
+            <div className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[11px] font-medium text-sky-800">
+              <span className="h-1.5 w-1.5 rounded-full bg-sky-500" />
+              {planLabel}
+            </div>
           </div>
         </div>
 
-        {isLoadingClasses && (
-          <p className="text-sm text-muted-foreground">
-            Cargando clases disponibles…
-          </p>
+        {/* Card de plan con barra de progreso */}
+        {planMaxBookings !== null && (
+          <Card className="border-emerald-100 bg-emerald-50/70">
+            <CardContent className="py-4 space-y-3 text-xs text-emerald-900">
+              <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+                <p>
+                  Tu plan actual te permite hasta{" "}
+                  <span className="font-semibold">{planMaxBookings}</span>{" "}
+                  reservas activas.
+                </p>
+                <p className="text-[11px] text-emerald-800/80">
+                  Reservas usadas:{" "}
+                  <span className="font-semibold">
+                    {bookingsCount}/{planMaxBookings}
+                  </span>
+                </p>
+              </div>
+
+              {/* Barra de progreso visual */}
+              <div className="mt-1 space-y-1">
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-emerald-100">
+                  <div
+                    className="h-full rounded-full bg-emerald-500 transition-all"
+                    style={{ width: `${planUsagePercent}%` }}
+                  />
+                </div>
+                <p className="text-[10px] text-emerald-800/70">
+                  Estás usando aproximadamente{" "}
+                  <span className="font-semibold">
+                    {planUsagePercent}% de tu plan
+                  </span>
+                  .
+                  {hasReachedPlanLimit && (
+                    <> Cancela alguna reserva para agendar nuevas.</>
+                  )}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
         )}
 
-        {!isLoadingClasses && filteredClasses.length === 0 && (
-          <p className="text-sm text-muted-foreground">
-            No hay clases con estos filtros. Prueba cambiar el nivel o limpiar
-            la búsqueda.
-          </p>
-        )}
-
-        {!isLoadingClasses && filteredClasses.length > 0 && (
-          <div className="grid gap-4 md:grid-cols-2">
-            {filteredClasses.map((cls) => {
-              const isBooked = bookedClassIds.has(cls.id);
-
-              const bookingsCount = bookingCounts[cls.id] ?? 0;
-              const capacity =
-                cls.capacity !== undefined && cls.capacity !== null
-                  ? cls.capacity
-                  : null;
-              const isFull =
-                capacity !== null && bookingsCount >= capacity;
-
-              const disabled = !isBooked && isFull;
-              const label = isBooked
-                ? "Cancelar reserva"
-                : isFull
-                ? "Sin cupos"
-                : "Reservar clase";
-
-              return (
-                <Card key={cls.id} className="border-emerald-50 shadow-sm">
-                  <CardHeader className="pb-2 flex flex-row items-start justify-between gap-2">
-                    <div>
-                      <CardTitle className="text-sm md:text-base">
-                        {cls.title}
-                      </CardTitle>
-                      <p className="mt-0.5 text-[11px] text-muted-foreground">
-                        {formatClassDateTime(cls.start_at)}
-                      </p>
-                    </div>
-                    {isFull && (
-                      <span className="inline-flex items-center rounded-full border border-red-100 bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-700">
-                        Clase llena
-                      </span>
-                    )}
-                  </CardHeader>
-                  <CardContent className="space-y-2 text-xs md:text-sm">
-                    <p className="text-muted-foreground">
-                      {cls.description || "Clase de Pilates del estudio."}
-                    </p>
-                    <p>
-                      Nivel:{" "}
-                      <span className="font-semibold text-emerald-700">
-                        {cls.level}
-                      </span>
-                    </p>
-                    <p className="text-[11px] text-muted-foreground">
-                      Cupos:{" "}
-                      <span className="font-semibold text-emerald-700">
-                        {capacity !== null
-                          ? `${bookingsCount}/${capacity}`
-                          : bookingsCount}
-                      </span>
-                    </p>
-                    <Button
-                      size="sm"
-                      variant={
-                        isBooked ? "outline" : disabled ? "outline" : "default"
-                      }
-                      disabled={disabled}
-                      onClick={() => {
-                        if (disabled) return;
-                        void handleToggleBooking(cls.id);
-                      }}
-                    >
-                      {label}
-                    </Button>
-                  </CardContent>
-                </Card>
-              );
-            })}
+        {/* Mis próximas clases */}
+        <section className="space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold">Clases que ya reservaste</h2>
+            {!isLoadingBookings && (
+              <span className="rounded-full bg-emerald-50 px-3 py-1 text-[10px] font-medium text-emerald-800 border border-emerald-100">
+                {bookedClasses.length} clase
+                {bookedClasses.length === 1 ? "" : "s"} reservada
+                {bookedClasses.length === 1 ? "" : "s"}
+              </span>
+            )}
           </div>
-        )}
-      </section>
+
+          {isLoadingBookings && (
+            <p className="text-xs text-muted-foreground">
+              Cargando tus reservas…
+            </p>
+          )}
+
+          {!isLoadingBookings && bookedClasses.length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              🌱 Aún no tienes clases reservadas. Elige una clase disponible y
+              resérvala para sumarla a tu agenda.
+            </p>
+          )}
+
+          {!isLoadingBookings && bookedClasses.length > 0 && (
+            <div className="grid gap-3 md:grid-cols-2">
+              {bookedClasses.map((cls) => {
+                const bookingsCountForClass = bookingCounts[cls.id] ?? 0;
+                const capacity =
+                  cls.capacity !== undefined && cls.capacity !== null
+                    ? cls.capacity
+                    : null;
+                const isFull =
+                  capacity !== null && bookingsCountForClass >= capacity;
+
+                return (
+                  <Card
+                    key={cls.id}
+                    className="overflow-hidden border-emerald-100 bg-white"
+                  >
+                    {/* Cabecera visual */}
+                    <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 px-4 py-3 text-emerald-50">
+                      <p className="text-[10px] uppercase tracking-[0.2em] opacity-80">
+                        Clase reservada
+                      </p>
+                      <h3 className="mt-1 text-sm font-semibold line-clamp-1">
+                        {cls.title}
+                      </h3>
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <span className="inline-flex items-center rounded-full bg-emerald-100/90 px-2 py-0.5 text-[10px] font-medium text-emerald-800">
+                          {cls.level}
+                        </span>
+                        {isFull && (
+                          <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-700">
+                            Clase llena
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <CardContent className="space-y-2 p-4 text-xs md:text-sm">
+                      <p className="text-muted-foreground line-clamp-3">
+                        {cls.description || "Clase de Pilates del estudio."}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        Próximo horario:{" "}
+                        <span className="font-semibold text-emerald-700">
+                          {formatClassDateTime(cls.start_at)}
+                        </span>
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        Cupos:{" "}
+                        <span className="font-semibold text-emerald-700">
+                          {capacity !== null
+                            ? `${bookingsCountForClass}/${capacity}`
+                            : bookingsCountForClass}
+                        </span>
+                      </p>
+                      <div className="pt-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => void handleToggleBooking(cls.id)}
+                        >
+                          Cancelar reserva
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* Filtros + listado general */}
+        <section className="space-y-4 pt-4 border-t">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="flex-1">
+              <Input
+                placeholder="Buscar por título o descripción…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full bg-white"
+              />
+            </div>
+
+            <div className="w-full md:w-52">
+              <Select
+                value={levelFilter}
+                onValueChange={(value) => setLevelFilter(value)}
+              >
+                <SelectTrigger className="bg-white">
+                  <SelectValue placeholder="Filtrar por nivel" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Todos">Todos los niveles</SelectItem>
+                  <SelectItem value="Básico">Básico</SelectItem>
+                  <SelectItem value="Intermedio">Intermedio</SelectItem>
+                  <SelectItem value="Avanzado">Avanzado</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {isLoadingClasses && (
+            <p className="text-sm text-muted-foreground">
+              Cargando clases disponibles…
+            </p>
+          )}
+
+          {!isLoadingClasses && filteredClasses.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              No hay clases con estos filtros. Prueba cambiar el nivel o limpiar
+              la búsqueda.
+            </p>
+          )}
+
+          {!isLoadingClasses && filteredClasses.length > 0 && (
+            <div className="grid gap-4 md:grid-cols-2">
+              {filteredClasses.map((cls) => {
+                const isBooked = bookedClassIds.has(cls.id);
+
+                const bookingsCountForClass = bookingCounts[cls.id] ?? 0;
+                const capacity =
+                  cls.capacity !== undefined && cls.capacity !== null
+                    ? cls.capacity
+                    : null;
+                const isFull =
+                  capacity !== null && bookingsCountForClass >= capacity;
+
+                const isPlanLimited = !isBooked && hasReachedPlanLimit;
+                const disabled = (!isBooked && isFull) || isPlanLimited;
+
+                const label = isBooked
+                  ? "Cancelar reserva"
+                  : isFull
+                  ? "Sin cupos"
+                  : isPlanLimited && planMaxBookings !== null
+                  ? `Límite de plan (${bookingsCount}/${planMaxBookings})`
+                  : "Reservar clase";
+
+                return (
+                  <Card
+                    key={cls.id}
+                    className="overflow-hidden border-emerald-50 bg-white transition hover:shadow-md hover:-translate-y-0.5"
+                  >
+                    {/* Cabecera visual como catálogo público */}
+                    <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 px-4 py-3 text-emerald-50">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-[10px] uppercase tracking-[0.2em] opacity-80">
+                            Clase guiada
+                          </p>
+                          <h3 className="mt-1 text-sm font-semibold line-clamp-1">
+                            {cls.title}
+                          </h3>
+                        </div>
+
+                        {/* Chip si ya está reservada */}
+                        {isBooked && (
+                          <span className="mt-1 inline-flex items-center rounded-full bg-emerald-900/30 px-2 py-0.5 text-[10px] font-medium text-emerald-50 border border-emerald-100">
+                            Reservada
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <span className="inline-flex items-center rounded-full bg-emerald-100/90 px-2 py-0.5 text-[10px] font-medium text-emerald-800">
+                          {cls.level}
+                        </span>
+                        {isFull && (
+                          <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-700">
+                            Clase llena
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <CardContent className="space-y-2 p-4 text-xs md:text-sm">
+                      <p className="text-muted-foreground line-clamp-3">
+                        {cls.description || "Clase de Pilates del estudio."}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        Próximo horario:{" "}
+                        <span className="font-semibold text-emerald-700">
+                          {formatClassDateTime(cls.start_at)}
+                        </span>
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        Cupos:{" "}
+                        <span className="font-semibold text-emerald-700">
+                          {capacity !== null
+                            ? `${bookingsCountForClass}/${capacity}`
+                            : bookingsCountForClass}
+                        </span>
+                      </p>
+
+                      <div className="pt-1">
+                        <Button
+                          size="sm"
+                          variant={
+                            isBooked
+                              ? "outline"
+                              : disabled
+                              ? "outline"
+                              : "default"
+                          }
+                          disabled={disabled}
+                          className="w-full"
+                          onClick={() => {
+                            if (disabled) return;
+                            void handleToggleBooking(cls.id);
+                          }}
+                        >
+                          {label}
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      </div>
     </div>
   );
 }

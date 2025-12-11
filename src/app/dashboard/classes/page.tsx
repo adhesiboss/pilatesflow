@@ -1,12 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-
 import { useClassesStore } from "@/lib/classes-store";
 import { useAuthStore } from "@/lib/auth-store";
-import { supabase } from "@/lib/supabaseClient";
+import { useRouter } from "next/navigation";
 
 import {
   Card,
@@ -32,19 +29,13 @@ import {
   TableBody,
   TableCell,
 } from "@/components/ui/table";
+import { PlayCircle } from "lucide-react";
 
-/** Formatea la fecha/hora de la clase para mostrar en la tabla */
-function formatClassDateTime(start_at?: string | null): string {
-  if (!start_at) return "Sin horario";
-  const date = new Date(start_at);
-  if (Number.isNaN(date.getTime())) return "Sin horario";
-
-  return date.toLocaleString("es-CL", {
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+function getRoleLabel(role: "admin" | "instructor" | "alumna" | undefined) {
+  if (!role) return "";
+  if (role === "admin") return "Administrador/a";
+  if (role === "instructor") return "Instructor/a";
+  return "Alumna";
 }
 
 export default function ClassesDashboardPage() {
@@ -54,40 +45,18 @@ export default function ClassesDashboardPage() {
 
   const router = useRouter();
 
+  const { profile } = useAuthStore();
+  const roleLabel = getRoleLabel(profile?.role);
+
   const [search, setSearch] = useState("");
   const [levelFilter, setLevelFilter] = useState<string>("Todos");
-  const [bookingCounts, setBookingCounts] = useState<Record<string, number>>(
-    {}
-  );
 
-  // auth / rol
-  const { user, profile } = useAuthStore();
-  const userEmail = user?.email ?? null;
-  const isInstructor = profile?.role === "instructor";
-  const isAdmin = profile?.role === "admin";
-
-  const roleLabel =
-    profile?.role === "admin"
-      ? "Administrador/a"
-      : profile?.role === "instructor"
-      ? "Instructor/a"
-      : "Alumna";
-
-  // cargar clases
   useEffect(() => {
-    fetchClasses();
+    void fetchClasses();
   }, [fetchClasses]);
 
-  // clases filtradas por rol + filtros de búsqueda
   const filteredClasses = useMemo(() => {
-    let result = classes;
-
-    // Si es instructor, solo ve sus clases
-    if (isInstructor && userEmail) {
-      result = result.filter((cls) => cls.instructorEmail === userEmail);
-    }
-
-    return result.filter((cls) => {
+    return classes.filter((cls) => {
       const matchesLevel =
         levelFilter === "Todos" || cls.level === levelFilter;
 
@@ -98,43 +67,7 @@ export default function ClassesDashboardPage() {
 
       return matchesLevel && matchesSearch;
     });
-  }, [classes, isInstructor, userEmail, levelFilter, search]);
-
-  // cargar conteo de reservas para las clases visibles
-  useEffect(() => {
-    async function loadBookingCounts() {
-      if (filteredClasses.length === 0) {
-        setBookingCounts({});
-        return;
-      }
-
-      const classIds = filteredClasses.map((cls) => cls.id);
-
-      const { data, error } = await supabase
-        .from("bookings")
-        .select("classId")
-        .in("classId", classIds);
-
-      if (error) {
-        console.error(
-          "Error al obtener conteo de reservas:",
-          error.message,
-          error.details,
-          error.hint
-        );
-        return;
-      }
-
-      const counts: Record<string, number> = {};
-      (data as { classId: string }[]).forEach((row) => {
-        counts[row.classId] = (counts[row.classId] ?? 0) + 1;
-      });
-
-      setBookingCounts(counts);
-    }
-
-    void loadBookingCounts();
-  }, [filteredClasses]);
+  }, [classes, levelFilter, search]);
 
   return (
     <div className="p-6 md:p-10 max-w-5xl mx-auto space-y-6">
@@ -154,7 +87,9 @@ export default function ClassesDashboardPage() {
         </div>
 
         <Button asChild className="mt-2 md:mt-0">
-          <Link href="/dashboard/classes/new">Nueva clase</Link>
+          <span onClick={() => router.push("/dashboard/classes/new")}>
+            Nueva clase
+          </span>
         </Button>
       </div>
 
@@ -163,10 +98,6 @@ export default function ClassesDashboardPage() {
         <div className="mb-2 rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-2 text-xs text-emerald-800">
           Estás usando el dashboard como{" "}
           <span className="font-semibold">{roleLabel}</span>.
-          {isInstructor && (
-            <> Solo verás las clases que tú impartes.</>
-          )}
-          {isAdmin && <> Tienes acceso a todas las clases del estudio.</>}
         </div>
       )}
 
@@ -225,22 +156,21 @@ export default function ClassesDashboardPage() {
                 Comienza creando tu primera clase, por ejemplo “Pilates Mat
                 Básico” o “Reformer Suave para la Mañana”.
               </p>
-              <Button asChild className="mt-2">
-                <Link href="/dashboard/classes/new">
-                  Crear mi primera clase
-                </Link>
+              <Button
+                className="mt-2"
+                onClick={() => router.push("/dashboard/classes/new")}
+              >
+                Crear mi primera clase
               </Button>
             </div>
           )}
 
-          {!isLoading &&
-            classes.length > 0 &&
-            filteredClasses.length === 0 && (
-              <p className="text-sm text-muted-foreground py-6">
-                No encontramos clases que coincidan con los filtros actuales.
-                Prueba con otro nivel o busca por otra palabra clave.
-              </p>
-            )}
+          {!isLoading && classes.length > 0 && filteredClasses.length === 0 && (
+            <p className="text-sm text-muted-foreground py-6">
+              No encontramos clases que coincidan con los filtros actuales.
+              Prueba con otro nivel o busca por otra palabra clave.
+            </p>
+          )}
 
           {!isLoading && filteredClasses.length > 0 && (
             <div className="overflow-x-auto">
@@ -249,56 +179,40 @@ export default function ClassesDashboardPage() {
                   <TableRow>
                     <TableHead>Título</TableHead>
                     <TableHead>Nivel</TableHead>
-                    <TableHead>Horario</TableHead>
                     <TableHead>Descripción</TableHead>
-                    <TableHead className="text-right">
-                      Reservas / cupos
-                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredClasses.map((cls) => {
-                    const bookingsCount = bookingCounts[cls.id] ?? 0;
-                    const capacity =
-                      cls.capacity !== undefined && cls.capacity !== null
-                        ? cls.capacity
-                        : null;
-
-                    return (
-                      <TableRow
-                        key={cls.id}
-                        className="cursor-pointer hover:bg-emerald-50/40"
-                        onClick={() =>
-                          router.push(`/dashboard/classes/${cls.id}`)
-                        }
-                      >
-                        <TableCell className="font-medium">
-                          {cls.title}
-                        </TableCell>
-
-                        <TableCell className="text-xs md:text-sm">
-                          {cls.level}
-                        </TableCell>
-
-                        <TableCell className="text-xs md:text-sm text-muted-foreground">
-                          {formatClassDateTime(cls.start_at)}
-                        </TableCell>
-
-                        <TableCell className="text-xs md:text-sm text-muted-foreground">
-                          {cls.description?.slice(0, 80)}
-                          {cls.description && cls.description.length > 80
-                            ? "…"
-                            : ""}
-                        </TableCell>
-
-                        <TableCell className="text-right text-xs md:text-sm font-medium">
-                          {capacity !== null
-                            ? `${bookingsCount}/${capacity}`
-                            : bookingsCount}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
+                  {filteredClasses.map((cls) => (
+                    <TableRow
+                      key={cls.id}
+                      className="cursor-pointer hover:bg-emerald-50/40"
+                      onClick={() =>
+                        router.push(`/dashboard/classes/${cls.id}`)
+                      }
+                    >
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          <span>{cls.title}</span>
+                          {cls.video_url && (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[9px] font-medium text-emerald-700">
+                              <PlayCircle className="h-3 w-3" />
+                              Video
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-xs md:text-sm">
+                        {cls.level}
+                      </TableCell>
+                      <TableCell className="text-xs md:text-sm text-muted-foreground">
+                        {cls.description?.slice(0, 80)}
+                        {cls.description && cls.description.length > 80
+                          ? "…"
+                          : ""}
+                      </TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             </div>

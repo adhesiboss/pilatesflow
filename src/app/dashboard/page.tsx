@@ -6,19 +6,29 @@ import { useAuthStore } from "@/lib/auth-store";
 
 export default function DashboardIndexPage() {
   const router = useRouter();
-  const { user, profile, initialized, init } = useAuthStore();
+  const { user, profile, initialized, loading, init } = useAuthStore();
 
   useEffect(() => {
     if (!initialized) {
-      init();
+      void init();
     }
   }, [initialized, init]);
 
   useEffect(() => {
-    if (!initialized) return;
+    if (!initialized || loading) return;
 
-    if (!user || !profile) {
+    if (!user) {
       router.replace("/login");
+      return;
+    }
+
+    if (!profile) {
+      router.replace("/");
+      return;
+    }
+
+    if (profile.role === "admin" || profile.role === "instructor") {
+      router.replace("/dashboard/classes");
       return;
     }
 
@@ -27,19 +37,12 @@ export default function DashboardIndexPage() {
       return;
     }
 
-    if (profile.role === "instructor") {
-      // luego podemos mandarlo a /dashboard/instructor
-      router.replace("/dashboard/classes");
-      return;
-    }
-
-    // Admin
-    router.replace("/dashboard/classes");
-  }, [initialized, user, profile, router]);
+    router.replace("/");
+  }, [initialized, loading, user, profile, router]);
 
   return (
-    <div className="flex min-h-[60vh] items-center justify-center text-sm text-muted-foreground">
-      Redirigiendo a tu espacio…
+    <div className="p-6 text-sm text-muted-foreground">
+      Redirigiendo a tu panel…
     </div>
   );
 }

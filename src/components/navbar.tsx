@@ -14,6 +14,9 @@ import {
 } from "@/components/ui/sheet";
 import { useAuthStore } from "@/lib/auth-store";
 
+type Role = "admin" | "instructor" | "alumna";
+type Plan = "free" | "activa";
+
 function getInitials(email: string | null): string {
   if (!email) return "?";
   const [namePart] = email.split("@");
@@ -21,11 +24,17 @@ function getInitials(email: string | null): string {
   return namePart.slice(0, 2).toUpperCase();
 }
 
-function getRoleLabel(role: "admin" | "instructor" | "alumna" | undefined) {
+function getRoleLabel(role: Role | undefined) {
   if (!role) return "";
   if (role === "admin") return "Administrador/a";
   if (role === "instructor") return "Instructor/a";
   return "Alumna";
+}
+
+function getPlanLabel(plan: Plan | null | undefined) {
+  if (!plan || plan === "free") return "Plan Free";
+  if (plan === "activa") return "Plan Activa";
+  return `Plan ${plan}`;
 }
 
 export default function Navbar() {
@@ -33,10 +42,8 @@ export default function Navbar() {
 
   // Nos aseguramos de que el store se inicialice también en rutas públicas
   useEffect(() => {
-    if (!initialized) {
-      init();
-    }
-  }, [initialized, init]);
+    void init();
+  }, [init]);
 
   const userEmail = user?.email ?? null;
   const shortEmail =
@@ -44,7 +51,9 @@ export default function Navbar() {
       ? `${userEmail.slice(0, 21)}…`
       : userEmail;
 
-  const roleLabel = getRoleLabel(profile?.role);
+  const roleLabel = getRoleLabel(profile?.role as Role | undefined);
+  const plan = (profile?.plan ?? "free") as Plan;
+  const planLabel = getPlanLabel(plan);
 
   return (
     <header className="sticky top-0 z-20 border-b bg-white/70 backdrop-blur">
@@ -68,7 +77,7 @@ export default function Navbar() {
 
           {initialized && user ? (
             <>
-              {/* 👇 ahora va al router de roles */}
+              {/* 🔁 AQUÍ CAMBIAMOS: ahora va a /dashboard (router decide por rol) */}
               <Link
                 href="/dashboard"
                 className="text-xs md:text-sm text-muted-foreground hover:text-foreground"
@@ -76,7 +85,7 @@ export default function Navbar() {
                 Dashboard
               </Link>
 
-              {/* Chip usuario + rol */}
+              {/* Chip usuario + rol + plan */}
               <Link
                 href="/dashboard/profile"
                 className="inline-flex items-center gap-2 rounded-full border px-2 py-1 text-xs text-muted-foreground hover:border-emerald-300 hover:text-emerald-700"
@@ -89,6 +98,11 @@ export default function Navbar() {
                   {roleLabel && (
                     <span className="text-[10px] font-semibold text-emerald-700">
                       {roleLabel}
+                    </span>
+                  )}
+                  {planLabel && (
+                    <span className="text-[10px] text-sky-700">
+                      {planLabel}
                     </span>
                   )}
                 </div>
@@ -132,7 +146,7 @@ export default function Navbar() {
 
                 {initialized && user ? (
                   <>
-                    {/* 👇 también aquí usamos /dashboard */}
+                    {/* 🔁 AQUÍ TAMBIÉN CAMBIAMOS A /dashboard */}
                     <Link
                       href="/dashboard"
                       className="text-sm text-muted-foreground hover:text-foreground"
@@ -140,6 +154,7 @@ export default function Navbar() {
                       Dashboard
                     </Link>
 
+                    {/* Chip usuario + rol + plan (mobile) */}
                     <Link
                       href="/dashboard/profile"
                       className="inline-flex items-center gap-3 rounded-lg border px-3 py-2 text-sm text-muted-foreground hover:border-emerald-300 hover:text-emerald-700"
@@ -152,6 +167,11 @@ export default function Navbar() {
                         {roleLabel && (
                           <span className="text-[11px] font-semibold text-emerald-700">
                             {roleLabel}
+                          </span>
+                        )}
+                        {planLabel && (
+                          <span className="text-[11px] text-sky-700">
+                            {planLabel}
                           </span>
                         )}
                       </div>

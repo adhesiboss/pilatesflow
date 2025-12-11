@@ -3,11 +3,12 @@ import { create } from "zustand";
 import { supabase } from "@/lib/supabaseClient";
 import type { User } from "@supabase/supabase-js";
 
-type Role = "admin" | "instructor" | "alumna";
+export type Role = "admin" | "instructor" | "alumna";
+export type Plan = "free" | "activa";
 
-interface Profile {
+export interface Profile {
   role: Role;
-  full_name?: string | null;
+  plan?: Plan | null;
 }
 
 interface AuthState {
@@ -35,7 +36,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   initialized: false,
   error: null,
 
-  // Se ejecuta al montar la app / navbar
   init: async () => {
     if (get().initialized) return;
 
@@ -60,7 +60,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     const { data: profileRow, error: profileError } = await supabase
       .from("profiles")
-      .select("role")
+      .select("role, plan")
       .eq("id", user.id)
       .maybeSingle();
 
@@ -69,7 +69,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     const profile: Profile | null = profileRow
-      ? { role: profileRow.role as Role }
+      ? {
+          role: profileRow.role as Role,
+          plan: (profileRow.plan ?? "free") as Plan,
+        }
       : null;
 
     set({
@@ -81,7 +84,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     });
   },
 
-  // Login
   signIn: async (email, password) => {
     set({ loading: true, error: null });
 
@@ -95,20 +97,29 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return { ok: false, error: error.message };
     }
 
-    // Refrescamos user + profile
     const { data } = await supabase.auth.getUser();
     const user = data.user ?? null;
 
     let profile: Profile | null = null;
     if (user) {
-      const { data: profileRow } = await supabase
+      const { data: profileRow, error: profileError } = await supabase
         .from("profiles")
-        .select("role")
+        .select("role, plan")
         .eq("id", user.id)
         .maybeSingle();
 
+      if (profileError) {
+        console.warn(
+          "⚠️ Error cargando profile (signIn):",
+          profileError.message
+        );
+      }
+
       if (profileRow) {
-        profile = { role: profileRow.role as Role };
+        profile = {
+          role: profileRow.role as Role,
+          plan: (profileRow.plan ?? "free") as Plan,
+        };
       }
     }
 
@@ -123,7 +134,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     return { ok: true };
   },
 
-  // Registro
   signUp: async (email, password) => {
     set({ loading: true, error: null });
 
@@ -141,7 +151,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     return { ok: true };
   },
 
-  // Logout
   signOut: async () => {
     set({ loading: true });
 

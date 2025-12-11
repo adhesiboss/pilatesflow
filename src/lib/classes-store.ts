@@ -1,48 +1,57 @@
+// src/lib/classes-store.ts
+"use client";
+
 import { create } from "zustand";
 import { supabase } from "@/lib/supabaseClient";
 
-export type ClassItem = {
+export interface ClassItem {
   id: string;
   title: string;
   level: string;
-  description: string;
-  created_at: string;
-  instructorEmail?: string | null;
-
-  // NUEVO: programación de la clase
+  description?: string | null;
   start_at?: string | null;
   duration_minutes?: number | null;
   capacity?: number | null;
-};
+  instructorEmail?: string | null;
+  video_url?: string | null;
+  discipline?: string | null; // 👈 NUEVO
+  created_at?: string | null;
+}
 
-type NewClassInput = {
+// Tipo para crear una clase nueva desde el formulario
+export type NewClassInput = {
   title: string;
   level: string;
-  description: string;
-  instructorEmail?: string | null;
-
+  description?: string | null;
   start_at?: string | null;
   duration_minutes?: number | null;
   capacity?: number | null;
+  instructorEmail?: string | null;
+  video_url?: string | null;
+  discipline?: string | null; // 👈 NUEVO
 };
 
-type ClassesState = {
+// Tipo para actualizar una clase existente
+export type UpdateClassInput = Partial<NewClassInput>;
+
+interface ClassesState {
   classes: ClassItem[];
   isLoading: boolean;
-  error?: string;
+  error: string | null;
   fetchClasses: () => Promise<void>;
-  addClass: (data: NewClassInput) => Promise<ClassItem | null>;
-  updateClass: (id: string, data: Partial<NewClassInput>) => Promise<void>;
+  addClass: (input: NewClassInput) => Promise<ClassItem | null>;
+  updateClass: (id: string, input: UpdateClassInput) => Promise<void>;
   removeClass: (id: string) => Promise<void>;
-};
+}
 
-export const useClassesStore = create<ClassesState>((set) => ({
+export const useClassesStore = create<ClassesState>((set, get) => ({
   classes: [],
   isLoading: false,
-  error: undefined,
+  error: null,
 
+  // Cargar todas las clases
   fetchClasses: async () => {
-    set({ isLoading: true, error: undefined });
+    set({ isLoading: true, error: null });
 
     const { data, error } = await supabase
       .from("classes")
@@ -50,79 +59,107 @@ export const useClassesStore = create<ClassesState>((set) => ({
       .order("created_at", { ascending: false });
 
     if (error) {
-      console.error("Error al obtener clases:", error);
-      set({ error: error.message, isLoading: false });
+      console.error("Error cargando clases:", error);
+      set({ isLoading: false, error: error.message });
       return;
     }
 
-    set({ classes: (data as ClassItem[]) ?? [], isLoading: false });
+    set({
+      classes: (data as ClassItem[]) ?? [],
+      isLoading: false,
+      error: null,
+    });
   },
 
-  addClass: async (data) => {
-    const { data: inserted, error } = await supabase
+  // Crear una nueva clase
+  addClass: async (input: NewClassInput) => {
+    set({ isLoading: true, error: null });
+
+    const { data, error } = await supabase
       .from("classes")
       .insert({
-        title: data.title,
-        level: data.level,
-        description: data.description,
-        instructorEmail: data.instructorEmail ?? null,
-        start_at: data.start_at ?? null,
-        duration_minutes: data.duration_minutes ?? null,
-        capacity: data.capacity ?? null,
+        title: input.title,
+        level: input.level,
+        description: input.description ?? null,
+        start_at: input.start_at ?? null,
+        duration_minutes: input.duration_minutes ?? null,
+        capacity: input.capacity ?? null,
+        instructorEmail: input.instructorEmail ?? null,
+        video_url: input.video_url ?? null,
+        discipline: input.discipline ?? null, // 👈 NUEVO
       })
-      .select()
+      .select("*")
       .single();
 
     if (error) {
-      console.error("Error al crear clase en Supabase:", error);
+      console.error("Error creando clase:", error);
+      set({ isLoading: false, error: error.message });
       return null;
     }
 
+    const created = data as ClassItem;
+
     set((state) => ({
-      classes: [inserted as ClassItem, ...state.classes],
+      classes: [created, ...state.classes],
+      isLoading: false,
+      error: null,
     }));
 
-    return inserted as ClassItem;
+    return created;
   },
 
-  updateClass: async (id, data) => {
-    const { data: updated, error } = await supabase
+  // Actualizar una clase existente
+  updateClass: async (id: string, input: UpdateClassInput) => {
+    set({ isLoading: true, error: null });
+
+    const { error, data } = await supabase
       .from("classes")
       .update({
-        title: data.title,
-        level: data.level,
-        description: data.description,
-        instructorEmail: data.instructorEmail,
-        start_at: data.start_at,
-        duration_minutes: data.duration_minutes,
-        capacity: data.capacity,
+        title: input.title,
+        level: input.level,
+        description: input.description,
+        start_at: input.start_at,
+        duration_minutes: input.duration_minutes,
+        capacity: input.capacity,
+        instructorEmail: input.instructorEmail,
+        video_url: input.video_url,
+        discipline: input.discipline, // 👈 NUEVO
       })
       .eq("id", id)
-      .select()
+      .select("*")
       .single();
 
     if (error) {
-      console.error("Error al actualizar clase:", error);
+      console.error("Error actualizando clase:", error);
+      set({ isLoading: false, error: error.message });
       return;
     }
 
+    const updated = data as ClassItem;
+
     set((state) => ({
-      classes: state.classes.map((cls) =>
-        cls.id === id ? (updated as ClassItem) : cls
-      ),
+      classes: state.classes.map((c) => (c.id === id ? updated : c)),
+      isLoading: false,
+      error: null,
     }));
   },
 
-  removeClass: async (id) => {
+  // Eliminar una clase
+  removeClass: async (id: string) => {
+    set({ isLoading: true, error: null });
+
     const { error } = await supabase.from("classes").delete().eq("id", id);
 
     if (error) {
-      console.error("Error al eliminar clase:", error);
+      console.error("Error eliminando clase:", error);
+      set({ isLoading: false, error: error.message });
       return;
     }
 
     set((state) => ({
-      classes: state.classes.filter((cls) => cls.id !== id),
+      classes: state.classes.filter((c) => c.id !== id),
+      isLoading: false,
+      error: null,
     }));
   },
 }));
