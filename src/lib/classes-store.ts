@@ -14,7 +14,8 @@ export interface ClassItem {
   capacity?: number | null;
   instructorEmail?: string | null;
   video_url?: string | null;
-  discipline?: string | null; // 👈 NUEVO
+  discipline?: string | null;
+  status?: "draft" | "published" | null;   // 👈 NUEVO
   created_at?: string | null;
 }
 
@@ -28,7 +29,8 @@ export type NewClassInput = {
   capacity?: number | null;
   instructorEmail?: string | null;
   video_url?: string | null;
-  discipline?: string | null; // 👈 NUEVO
+  discipline?: string | null;
+  status?: "draft" | "published" | null;   // 👈 NUEVO
 };
 
 // Tipo para actualizar una clase existente
@@ -44,7 +46,7 @@ interface ClassesState {
   removeClass: (id: string) => Promise<void>;
 }
 
-export const useClassesStore = create<ClassesState>((set, get) => ({
+export const useClassesStore = create<ClassesState>((set) => ({
   classes: [],
   isLoading: false,
   error: null,
@@ -86,7 +88,8 @@ export const useClassesStore = create<ClassesState>((set, get) => ({
         capacity: input.capacity ?? null,
         instructorEmail: input.instructorEmail ?? null,
         video_url: input.video_url ?? null,
-        discipline: input.discipline ?? null, // 👈 NUEVO
+        discipline: input.discipline ?? null,
+        status: input.status ?? "published",        // 👈 NUEVO (default)
       })
       .select("*")
       .single();
@@ -123,7 +126,8 @@ export const useClassesStore = create<ClassesState>((set, get) => ({
         capacity: input.capacity,
         instructorEmail: input.instructorEmail,
         video_url: input.video_url,
-        discipline: input.discipline, // 👈 NUEVO
+        discipline: input.discipline,
+        status: input.status,                     // 👈 NUEVO
       })
       .eq("id", id)
       .select("*")

@@ -1,3 +1,4 @@
+// src/components/Navbar.tsx
 "use client";
 
 import { useEffect } from "react";
@@ -58,12 +59,29 @@ export default function Navbar() {
   return (
     <header className="sticky top-0 z-20 border-b bg-white/70 backdrop-blur">
       <nav className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
-        {/* Logo */}
-        <Link href="/" className="flex items-center gap-2">
-          <span className="text-xs font-semibold tracking-[0.25em] uppercase text-emerald-500">
-            Pilates
-          </span>
-          <span className="text-sm font-medium">Flow</span>
+        {/* Logo mejorado */}
+        <Link
+          href="/"
+          className="flex items-center gap-2 group"
+        >
+          {/* Marca inicial redonda */}
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500 text-[11px] font-semibold text-emerald-50 shadow-sm group-hover:scale-105 transition-transform">
+            PF
+          </div>
+
+          {/* Texto marca + dedicatoria */}
+          <div className="flex flex-col leading-tight">
+            <span className="text-[11px] font-semibold tracking-[0.22em] uppercase text-neutral-900 group-hover:text-emerald-700 transition-colors">
+              PILATES{" "}
+              <span className="text-emerald-600">
+                FLOW
+              </span>
+            </span>
+            <span className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-[2px] text-[9px] font-medium text-emerald-700 border border-emerald-100/70">
+              <span className="h-1 w-1 rounded-full bg-emerald-500" />
+              dedicated to aksaya_studio
+            </span>
+          </div>
         </Link>
 
         {/* Desktop */}
@@ -77,9 +95,8 @@ export default function Navbar() {
 
           {initialized && user ? (
             <>
-              {/* 🔁 AQUÍ CAMBIAMOS: ahora va a /dashboard (router decide por rol) */}
               <Link
-                href="/dashboard"
+                href="/dashboard/classes"
                 className="text-xs md:text-sm text-muted-foreground hover:text-foreground"
               >
                 Dashboard
@@ -100,6 +117,7 @@ export default function Navbar() {
                       {roleLabel}
                     </span>
                   )}
+                  {/* Plan debajo del rol */}
                   {planLabel && (
                     <span className="text-[10px] text-sky-700">
                       {planLabel}
@@ -146,9 +164,8 @@ export default function Navbar() {
 
                 {initialized && user ? (
                   <>
-                    {/* 🔁 AQUÍ TAMBIÉN CAMBIAMOS A /dashboard */}
                     <Link
-                      href="/dashboard"
+                      href="/dashboard/classes"
                       className="text-sm text-muted-foreground hover:text-foreground"
                     >
                       Dashboard

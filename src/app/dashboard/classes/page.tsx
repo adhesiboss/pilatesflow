@@ -1,9 +1,15 @@
+// src/app/dashboard/classes/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useClassesStore } from "@/lib/classes-store";
-import { useAuthStore } from "@/lib/auth-store";
+import { useEffect, useMemo, useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
+
+import { useAuthStore } from "@/lib/auth-store";
+import {
+  useClassesStore,
+  type ClassItem,
+  type NewClassInput,
+} from "@/lib/classes-store";
 
 import {
   Card,
@@ -12,6 +18,7 @@ import {
   CardDescription,
   CardContent,
 } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -21,204 +28,1092 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableHeader,
-  TableRow,
-  TableHead,
-  TableBody,
-  TableCell,
-} from "@/components/ui/table";
-import { PlayCircle } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 
-function getRoleLabel(role: "admin" | "instructor" | "alumna" | undefined) {
+import {
+  CalendarClock,
+  Film,
+  Filter,
+  ListChecks,
+  Plus,
+  Users,
+} from "lucide-react";
+import { toast } from "sonner";
+
+type Role = "admin" | "instructor" | "alumna";
+
+// estado temporal (próxima / pasada / on-demand)
+type ClassStatus = "upcoming" | "past" | "ondemand";
+
+// estado de publicación en la BD
+type PublishStatus = "draft" | "published";
+
+type SortOrder = "start_asc" | "start_desc" | "created_desc";
+
+function getRoleLabel(role?: Role | null) {
   if (!role) return "";
-  if (role === "admin") return "Administrador/a";
-  if (role === "instructor") return "Instructor/a";
+  if (role === "admin") return "Administradora";
+  if (role === "instructor") return "Instructora";
   return "Alumna";
 }
 
-export default function ClassesDashboardPage() {
-  const classes = useClassesStore((state) => state.classes);
-  const isLoading = useClassesStore((state) => state.isLoading);
-  const fetchClasses = useClassesStore((state) => state.fetchClasses);
+function getDisciplineLabel(raw?: string | null) {
+  if (!raw) return "Pilates";
+  const key = raw.toLowerCase();
+  const map: Record<string, string> = {
+    mat: "Mat",
+    reformer: "Reformer",
+    suelo: "Suelo",
+    embarazo: "Embarazo",
+    postparto: "Postparto",
+    recuperacion: "Recuperación",
+    movilidad: "Movilidad",
+    otra: "Pilates",
+  };
+  return map[key] ?? raw.charAt(0).toUpperCase() + raw.slice(1);
+}
 
+function formatClassDateTime(start_at?: string | null): string {
+  if (!start_at) return "Sin horario";
+  const d = new Date(start_at);
+  if (Number.isNaN(d.getTime())) return "Sin horario";
+  return d.toLocaleString("es-CL", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatDateShort(dateString?: string | null): string {
+  if (!dateString) return "";
+  const d = new Date(dateString);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("es-CL", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+// status “virtual” según fecha / video
+function getClassStatus(cls: ClassItem): ClassStatus {
+  if (!cls.start_at && cls.video_url) return "ondemand";
+  if (!cls.start_at) return "upcoming";
+
+  const now = new Date();
+  const start = new Date(cls.start_at);
+  if (Number.isNaN(start.getTime())) return "upcoming";
+
+  return start >= now ? "upcoming" : "past";
+}
+
+export default function DashboardClassesPage() {
   const router = useRouter();
 
-  const { profile } = useAuthStore();
-  const roleLabel = getRoleLabel(profile?.role);
+  const { user, profile, initialized, init } = useAuthStore();
+  const userEmail = user?.email ?? null;
 
-  const [search, setSearch] = useState("");
-  const [levelFilter, setLevelFilter] = useState<string>("Todos");
+  const {
+    classes,
+    isLoading,
+    error,
+    fetchClasses,
+    addClass,
+    updateClass,
+    removeClass,
+  } = useClassesStore();
 
+  // Solo admin/instructora
+  useEffect(() => {
+    if (!initialized) return;
+    if (!user || !profile) {
+      router.replace("/login");
+      return;
+    }
+    if (profile.role === "alumna") {
+      router.replace("/dashboard/alumna");
+    }
+  }, [initialized, user, profile, router]);
+
+  // init auth
+  useEffect(() => {
+    if (!initialized) {
+      void init();
+    }
+  }, [initialized, init]);
+
+  // cargar clases
   useEffect(() => {
     void fetchClasses();
   }, [fetchClasses]);
 
+  // ---- resumen superior ----
+  const { totalClasses, classesWithVideo, upcomingThisWeek } = useMemo(() => {
+    if (!classes || classes.length === 0) {
+      return {
+        totalClasses: 0,
+        classesWithVideo: 0,
+        upcomingThisWeek: 0,
+      };
+    }
+
+    const now = new Date();
+    const weekAhead = new Date();
+    weekAhead.setDate(now.getDate() + 7);
+
+    let withVideo = 0;
+    let upcomingWeek = 0;
+
+    classes.forEach((cls) => {
+      if (cls.video_url) withVideo += 1;
+
+      if (cls.start_at) {
+        const start = new Date(cls.start_at);
+        if (!Number.isNaN(start.getTime())) {
+          if (start >= now && start <= weekAhead) {
+            upcomingWeek += 1;
+          }
+        }
+      }
+    });
+
+    return {
+      totalClasses: classes.length,
+      classesWithVideo: withVideo,
+      upcomingThisWeek: upcomingWeek,
+    };
+  }, [classes]);
+
+  // ---- estado de filtros ----
+  const [search, setSearch] = useState("");
+  const [levelFilter, setLevelFilter] = useState<string>("Todos");
+  const [disciplineFilter, setDisciplineFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<ClassStatus | "all">("all");
+  const [publishFilter, setPublishFilter] =
+    useState<"all" | PublishStatus>("all");
+  const [sortOrder, setSortOrder] =
+    useState<SortOrder>("start_asc");
+
+  // disciplinas disponibles dinámicas
+  const availableDisciplines = useMemo(() => {
+    const set = new Set<string>();
+    classes.forEach((cls) => {
+      if (cls.discipline) set.add(cls.discipline);
+    });
+    return Array.from(set);
+  }, [classes]);
+
   const filteredClasses = useMemo(() => {
-    return classes.filter((cls) => {
+    const term = search.toLowerCase().trim();
+
+    const filtered = classes.filter((cls) => {
       const matchesLevel =
         levelFilter === "Todos" || cls.level === levelFilter;
 
-      const text = (cls.title + " " + (cls.description ?? "")).toLowerCase();
-      const term = search.toLowerCase().trim();
+      const matchesDiscipline =
+        disciplineFilter === "all" ||
+        (cls.discipline && cls.discipline === disciplineFilter);
 
-      const matchesSearch = term === "" || text.includes(term);
+      const temporalStatus = getClassStatus(cls);
+      const matchesStatus =
+        statusFilter === "all" || statusFilter === temporalStatus;
 
-      return matchesLevel && matchesSearch;
+      const publishStatus =
+        (cls as { status?: PublishStatus | null }).status ?? "published";
+      const matchesPublishStatus =
+        publishFilter === "all" || publishFilter === publishStatus;
+
+      const searchableText =
+        (cls.title ?? "") +
+        " " +
+        (cls.description ?? "") +
+        " " +
+        getDisciplineLabel(cls.discipline);
+      const matchesSearch =
+        term === "" || searchableText.toLowerCase().includes(term);
+
+      return (
+        matchesLevel &&
+        matchesDiscipline &&
+        matchesStatus &&
+        matchesPublishStatus &&
+        matchesSearch
+      );
     });
-  }, [classes, levelFilter, search]);
+
+    // ordenar según sortOrder
+    const sorted = [...filtered].sort((a, b) => {
+      if (sortOrder === "created_desc") {
+        const aDate = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const bDate = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return bDate - aDate;
+      }
+
+      const aStart = a.start_at ? new Date(a.start_at).getTime() : NaN;
+      const bStart = b.start_at ? new Date(b.start_at).getTime() : NaN;
+
+      if (Number.isNaN(aStart) && Number.isNaN(bStart)) return 0;
+      if (Number.isNaN(aStart)) return 1;
+      if (Number.isNaN(bStart)) return -1;
+
+      if (sortOrder === "start_asc") {
+        return aStart - bStart;
+      }
+      // "start_desc"
+      return bStart - aStart;
+    });
+
+    return sorted;
+  }, [
+    classes,
+    levelFilter,
+    disciplineFilter,
+    statusFilter,
+    publishFilter,
+    search,
+    sortOrder,
+  ]);
+
+  // ---- estado de formulario (crear/editar) ----
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [title, setTitle] = useState("");
+  const [level, setLevel] = useState("Básico");
+  const [discipline, setDiscipline] = useState<string>("mat");
+  const [durationMinutes, setDurationMinutes] = useState<string>("30");
+  const [capacity, setCapacity] = useState<string>("8");
+  const [startDate, setStartDate] = useState<string>("");
+  const [startTime, setStartTime] = useState<string>("");
+  const [videoUrl, setVideoUrl] = useState("");
+  const [description, setDescription] = useState("");
+  const [publishStatus, setPublishStatus] =
+    useState<PublishStatus>("published");
+
+  function resetFilters() {
+    setSearch("");
+    setLevelFilter("Todos");
+    setDisciplineFilter("all");
+    setStatusFilter("all");
+    setPublishFilter("all");
+    setSortOrder("start_asc");
+  }
+
+  function resetForm() {
+    setEditingId(null);
+    setTitle("");
+    setLevel("Básico");
+    setDiscipline("mat");
+    setDurationMinutes("30");
+    setCapacity("8");
+    setStartDate("");
+    setStartTime("");
+    setVideoUrl("");
+    setDescription("");
+    setPublishStatus("published");
+  }
+
+  function fillFormFromClass(cls: ClassItem) {
+    setEditingId(cls.id);
+    setTitle(cls.title ?? "");
+    setLevel(cls.level ?? "Básico");
+    setDiscipline(cls.discipline ?? "mat");
+    setDurationMinutes(
+      cls.duration_minutes !== null && cls.duration_minutes !== undefined
+        ? String(cls.duration_minutes)
+        : "30"
+    );
+    setCapacity(
+      cls.capacity !== null && cls.capacity !== undefined
+        ? String(cls.capacity)
+        : "8"
+    );
+
+    if (cls.start_at) {
+      const d = new Date(cls.start_at);
+      if (!Number.isNaN(d.getTime())) {
+        const iso = d.toISOString();
+        setStartDate(iso.slice(0, 10));
+        setStartTime(iso.slice(11, 16));
+      } else {
+        setStartDate("");
+        setStartTime("");
+      }
+    } else {
+      setStartDate("");
+      setStartTime("");
+    }
+
+    setVideoUrl(cls.video_url ?? "");
+    setDescription(cls.description ?? "");
+
+    const storedStatus =
+      (cls as { status?: PublishStatus | null }).status ?? "published";
+    setPublishStatus(storedStatus);
+  }
+
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!userEmail) {
+      toast.error("Debes iniciar sesión para crear o editar clases.");
+      return;
+    }
+
+    if (!title.trim()) {
+      toast.error("La clase necesita un título.");
+      return;
+    }
+
+    const durationNumber = durationMinutes.trim()
+      ? Number.parseInt(durationMinutes, 10)
+      : null;
+    const capacityNumber = capacity.trim()
+      ? Number.parseInt(capacity, 10)
+      : null;
+
+    if (Number.isNaN(durationNumber as number)) {
+      toast.error("Duración inválida. Usa minutos (por ejemplo, 30).");
+      return;
+    }
+    if (Number.isNaN(capacityNumber as number)) {
+      toast.error("Capacidad inválida. Usa un número de cupos.");
+      return;
+    }
+
+    // componer start_at
+    let start_at: string | null = null;
+    if (startDate && startTime) {
+      const localIso = new Date(`${startDate}T${startTime}:00`).toISOString();
+      start_at = localIso;
+    }
+
+    const basePayload = {
+      title: title.trim(),
+      level,
+      description: description.trim() || null,
+      start_at,
+      duration_minutes: durationNumber,
+      capacity: capacityNumber,
+      instructorEmail: userEmail,
+      video_url: videoUrl.trim() || null,
+      discipline: discipline || null,
+      status: publishStatus,
+    };
+
+    const payload = basePayload as NewClassInput;
+
+    if (editingId) {
+      const result = await updateClass(editingId, payload);
+      if (result === undefined) {
+        if (error) {
+          toast.error("No se pudo actualizar la clase.");
+        } else {
+          toast.success("Clase actualizada.");
+          resetForm();
+        }
+      } else {
+        toast.success("Clase actualizada.");
+        resetForm();
+      }
+    } else {
+      const created = await addClass(payload);
+      if (!created) {
+        toast.error("No se pudo crear la clase.");
+        return;
+      }
+      toast.success("Clase creada.", {
+        description: "Ya aparece en tu listado de clases.",
+      });
+      resetForm();
+    }
+  }
+
+  async function handleDelete(id: string) {
+    const confirmed = window.confirm(
+      "¿Seguro que quieres eliminar esta clase? Esta acción no se puede deshacer."
+    );
+    if (!confirmed) return;
+
+    await removeClass(id);
+    toast("Clase eliminada", {
+      description: "Ya no aparecerá en tu catálogo.",
+    });
+
+    if (editingId === id) {
+      resetForm();
+    }
+  }
+
+  if (!initialized) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center text-sm text-muted-foreground">
+        Preparando tu panel de clases…
+      </div>
+    );
+  }
+
+  if (!user || !profile || profile.role === "alumna") {
+    return null;
+  }
+
+  const roleLabel = getRoleLabel(profile.role as Role);
+  const hasAnyClasses = classes.length > 0;
 
   return (
-    <div className="p-6 md:p-10 max-w-5xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div>
-          <p className="text-xs font-semibold tracking-[0.2em] text-emerald-500 uppercase">
-            Pilates Studio
-          </p>
-          <h1 className="text-2xl md:text-3xl font-semibold mt-1">
-            Mis clases
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Administra el catálogo de clases de tu estudio: crea, edita y
-            organiza tus sesiones.
-          </p>
-        </div>
-
-        <Button asChild className="mt-2 md:mt-0">
-          <span onClick={() => router.push("/dashboard/classes/new")}>
-            Nueva clase
-          </span>
-        </Button>
-      </div>
-
-      {/* Aviso de rol actual */}
-      {profile && (
-        <div className="mb-2 rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-2 text-xs text-emerald-800">
-          Estás usando el dashboard como{" "}
-          <span className="font-semibold">{roleLabel}</span>.
-        </div>
-      )}
-
-      {/* Filtros */}
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div className="flex-1">
-          <Input
-            placeholder="Buscar por título o descripción…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full"
-          />
-        </div>
-
-        <div className="w-full md:w-52">
-          <Select
-            value={levelFilter}
-            onValueChange={(value) => setLevelFilter(value)}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Filtrar por nivel" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="Todos">Todos los niveles</SelectItem>
-              <SelectItem value="Básico">Básico</SelectItem>
-              <SelectItem value="Intermedio">Intermedio</SelectItem>
-              <SelectItem value="Avanzado">Avanzado</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      {/* Tabla de clases */}
-      <Card className="border-emerald-50 shadow-sm">
-        <CardHeader>
-          <CardTitle className="text-base md:text-lg">
-            Clases creadas
-          </CardTitle>
-          <CardDescription>
-            Haz clic en una fila para editar o revisar el detalle de una clase.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {isLoading && (
-            <p className="text-sm text-muted-foreground">
-              Cargando clases del estudio…
+    <div className="min-h-[calc(100vh-3.5rem)] bg-gradient-to-b from-emerald-50/40 to-white">
+      <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8 md:py-10 md:gap-8">
+        {/* HEADER + RESUMEN */}
+        <section className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.25em] text-emerald-500">
+              Panel de clases
             </p>
-          )}
+            <h1 className="mt-1 text-2xl font-semibold md:text-3xl">
+              Gestiona tu estudio de Pilates
+            </h1>
+            <p className="mt-1 max-w-xl text-sm text-muted-foreground">
+              Crea, edita y organiza tus clases guiadas. Así tus alumnas siempre
+              saben qué practicar y cuándo.
+            </p>
+          </div>
 
-          {!isLoading && classes.length === 0 && (
-            <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
-              <p className="text-sm font-medium">
-                Aún no tienes clases creadas.
-              </p>
-              <p className="text-xs text-muted-foreground max-w-sm">
-                Comienza creando tu primera clase, por ejemplo “Pilates Mat
-                Básico” o “Reformer Suave para la Mañana”.
-              </p>
-              <Button
-                className="mt-2"
-                onClick={() => router.push("/dashboard/classes/new")}
-              >
-                Crear mi primera clase
-              </Button>
+          <div className="flex flex-col items-start gap-2 text-xs md:items-end">
+            <Badge className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-medium text-emerald-800">
+              {roleLabel}
+            </Badge>
+            <div className="flex gap-2 text-[11px] text-muted-foreground">
+              <span className="inline-flex items-center gap-1 rounded-full bg-white/70 px-2 py-0.5">
+                <ListChecks className="h-3 w-3" />
+                {totalClasses} clase
+                {totalClasses === 1 ? "" : "s"}
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-white/70 px-2 py-0.5">
+                <Film className="h-3 w-3" />
+                {classesWithVideo} con video
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-white/70 px-2 py-0.5">
+                <CalendarClock className="h-3 w-3" />
+                {upcomingThisWeek} esta semana
+              </span>
             </div>
-          )}
+          </div>
+        </section>
 
-          {!isLoading && classes.length > 0 && filteredClasses.length === 0 && (
-            <p className="text-sm text-muted-foreground py-6">
-              No encontramos clases que coincidan con los filtros actuales.
-              Prueba con otro nivel o busca por otra palabra clave.
-            </p>
-          )}
+        {/* LAYOUT: FORM + LISTADO */}
+        <div className="grid gap-6 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1.8fr)] lg:grid-cols-[minmax(0,1.1fr)_minmax(0,2fr)]">
+          {/* FORMULARIO */}
+          <Card className="border-emerald-100 bg-white/95 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center justify-between text-base md:text-lg">
+                <span>
+                  {editingId ? "Editar clase" : "Crear nueva clase"}
+                </span>
+                <Badge className="ml-2 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100 text-[10px] font-medium">
+                  {editingId ? "Modo edición" : "Modo creación"}
+                </Badge>
+              </CardTitle>
+              <CardDescription className="text-xs md:text-sm">
+                Define nivel, disciplina, duración y agrega un video si tienes
+                sesiones grabadas.
+              </CardDescription>
+            </CardHeader>
 
-          {!isLoading && filteredClasses.length > 0 && (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Título</TableHead>
-                    <TableHead>Nivel</TableHead>
-                    <TableHead>Descripción</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredClasses.map((cls) => (
-                    <TableRow
-                      key={cls.id}
-                      className="cursor-pointer hover:bg-emerald-50/40"
-                      onClick={() =>
-                        router.push(`/dashboard/classes/${cls.id}`)
-                      }
+            <CardContent>
+              <form
+                className="space-y-3 text-xs md:text-sm"
+                onSubmit={(e) => void handleSubmit(e)}
+              >
+                {/* Título */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-medium text-neutral-700">
+                    Título de la clase
+                  </label>
+                  <Input
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="Ej: Mat suave para comenzar el día"
+                    className="bg-white"
+                    required
+                  />
+                </div>
+
+                {/* Nivel + Disciplina */}
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-medium text-neutral-700">
+                      Nivel
+                    </label>
+                    <Select value={level} onValueChange={(v) => setLevel(v)}>
+                      <SelectTrigger className="bg-white">
+                        <SelectValue placeholder="Selecciona nivel" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Básico">Básico</SelectItem>
+                        <SelectItem value="Intermedio">Intermedio</SelectItem>
+                        <SelectItem value="Avanzado">Avanzado</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-medium text-neutral-700">
+                      Disciplina / enfoque
+                    </label>
+                    <Select
+                      value={discipline}
+                      onValueChange={(v) => setDiscipline(v)}
                     >
-                      <TableCell className="font-medium">
-                        <div className="flex items-center gap-2">
-                          <span>{cls.title}</span>
-                          {cls.video_url && (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[9px] font-medium text-emerald-700">
-                              <PlayCircle className="h-3 w-3" />
-                              Video
+                      <SelectTrigger className="bg-white">
+                        <SelectValue placeholder="Selecciona disciplina" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="mat">Mat / Suelo</SelectItem>
+                        <SelectItem value="reformer">Reformer</SelectItem>
+                        <SelectItem value="embarazo">Embarazo</SelectItem>
+                        <SelectItem value="postparto">Postparto</SelectItem>
+                        <SelectItem value="movilidad">Movilidad</SelectItem>
+                        <SelectItem value="recuperacion">
+                          Recuperación
+                        </SelectItem>
+                        <SelectItem value="otra">Otro / Mixto</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Duración + Capacidad */}
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-medium text-neutral-700">
+                      Duración (min)
+                    </label>
+                    <Input
+                      type="number"
+                      min={5}
+                      max={180}
+                      value={durationMinutes}
+                      onChange={(e) => setDurationMinutes(e.target.value)}
+                      className="bg-white"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-medium text-neutral-700">
+                      Capacidad (cupos)
+                    </label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={40}
+                      value={capacity}
+                      onChange={(e) => setCapacity(e.target.value)}
+                      className="bg-white"
+                    />
+                  </div>
+                </div>
+
+                {/* Fecha + Hora */}
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-medium text-neutral-700">
+                      Fecha (opcional)
+                    </label>
+                    <Input
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      className="bg-white"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-medium text-neutral-700">
+                      Hora (opcional)
+                    </label>
+                    <Input
+                      type="time"
+                      value={startTime}
+                      onChange={(e) => setStartTime(e.target.value)}
+                      className="bg-white"
+                    />
+                  </div>
+                </div>
+
+                {/* URL de video */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-medium text-neutral-700">
+                    URL de video (YouTube, Vimeo, etc.)
+                  </label>
+                  <Input
+                    type="url"
+                    value={videoUrl}
+                    onChange={(e) => setVideoUrl(e.target.value)}
+                    placeholder="https://..."
+                    className="bg-white"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Si agregas un video, la clase aparecerá como on-demand para
+                    tus alumnas.
+                  </p>
+                </div>
+
+                {/* Estado de publicación */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-medium text-neutral-700">
+                    Estado de publicación
+                  </label>
+                  <Select
+                    value={publishStatus}
+                    onValueChange={(v) =>
+                      setPublishStatus(v as PublishStatus)
+                    }
+                  >
+                    <SelectTrigger className="bg-white">
+                      <SelectValue placeholder="Selecciona estado" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="published">Publicada</SelectItem>
+                      <SelectItem value="draft">Borrador</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-muted-foreground">
+                    Puedes dejar una clase en <strong>borrador</strong> mientras
+                    pruebas la descripción o el video, y luego marcarla como{" "}
+                    <strong>publicada</strong>.
+                  </p>
+                </div>
+
+                {/* Descripción */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-medium text-neutral-700">
+                    Descripción
+                  </label>
+                  <Textarea
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="Cuenta brevemente de qué se trata esta sesión, a quién está dirigida y qué necesita la alumna (implementos, nivel, etc.)."
+                    className="min-h-[80px] bg-white"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between pt-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs text-muted-foreground"
+                    onClick={() => resetForm()}
+                  >
+                    Limpiar formulario
+                  </Button>
+                  <Button
+                    type="submit"
+                    size="sm"
+                    className="gap-2"
+                    disabled={isLoading}
+                  >
+                    <Plus className="h-4 w-4" />
+                    {editingId ? "Guardar cambios" : "Crear clase"}
+                  </Button>
+                </div>
+
+                {error && (
+                  <p className="pt-1 text-[11px] text-red-600">
+                    {error || "Ocurrió un error al guardar la clase."}
+                  </p>
+                )}
+              </form>
+            </CardContent>
+          </Card>
+
+          {/* LISTADO / TABLA LIGERA */}
+          <Card className="border-emerald-100 bg-white/95 shadow-sm">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <CardTitle className="text-base md:text-lg">
+                    Clases creadas
+                  </CardTitle>
+                  <CardDescription className="text-xs md:text-sm">
+                    Usa los filtros para encontrar rápido una clase y editarla.
+                  </CardDescription>
+                </div>
+                <Badge className="hidden rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100 text-[10px] font-medium md:inline-flex">
+                  <Filter className="mr-1 h-3 w-3" />
+                  Filtros activos
+                </Badge>
+              </div>
+            </CardHeader>
+
+            <CardContent className="space-y-3 text-xs md:text-sm">
+              {/* filtros listados */}
+              <div className="grid gap-2 md:grid-cols-[minmax(0,1.4fr)_minmax(0,0.9fr)_minmax(0,0.9fr)]">
+                <Input
+                  placeholder="Buscar por título, descripción o disciplina…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="bg-white"
+                />
+
+                <Select
+                  value={levelFilter}
+                  onValueChange={(value) => setLevelFilter(value)}
+                >
+                  <SelectTrigger className="bg-white">
+                    <SelectValue placeholder="Nivel" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Todos">Todos los niveles</SelectItem>
+                    <SelectItem value="Básico">Básico</SelectItem>
+                    <SelectItem value="Intermedio">Intermedio</SelectItem>
+                    <SelectItem value="Avanzado">Avanzado</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Select
+                  value={disciplineFilter}
+                  onValueChange={(value) => setDisciplineFilter(value)}
+                >
+                  <SelectTrigger className="bg-white">
+                    <SelectValue placeholder="Disciplina" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas las disciplinas</SelectItem>
+                    {availableDisciplines.map((disc) => (
+                      <SelectItem key={disc} value={disc}>
+                        {getDisciplineLabel(disc)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* filtro por estado temporal + orden */}
+              <div className="flex flex-wrap items-center justify-between gap-3 text-[11px]">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className={`rounded-full border px-3 py-1 transition-colors ${
+                      statusFilter === "all"
+                        ? "border-emerald-500 bg-emerald-50 text-emerald-800"
+                        : "border-neutral-200 text-neutral-600 hover:border-emerald-200 hover:text-emerald-800"
+                    }`}
+                    onClick={() => setStatusFilter("all")}
+                  >
+                    Todas
+                  </button>
+                  <button
+                    type="button"
+                    className={`rounded-full border px-3 py-1 transition-colors ${
+                      statusFilter === "upcoming"
+                        ? "border-emerald-500 bg-emerald-50 text-emerald-800"
+                        : "border-neutral-200 text-neutral-600 hover:border-emerald-200 hover:text-emerald-800"
+                    }`}
+                    onClick={() => setStatusFilter("upcoming")}
+                  >
+                    Próximas
+                  </button>
+                  <button
+                    type="button"
+                    className={`rounded-full border px-3 py-1 transition-colors ${
+                      statusFilter === "ondemand"
+                        ? "border-emerald-500 bg-emerald-50 text-emerald-800"
+                        : "border-neutral-200 text-neutral-600 hover:border-emerald-200 hover:text-emerald-800"
+                    }`}
+                    onClick={() => setStatusFilter("ondemand")}
+                  >
+                    On-demand
+                  </button>
+                  <button
+                    type="button"
+                    className={`rounded-full border px-3 py-1 transition-colors ${
+                      statusFilter === "past"
+                        ? "border-emerald-500 bg-emerald-50 text-emerald-800"
+                        : "border-neutral-200 text-neutral-600 hover:border-emerald-200 hover:text-emerald-800"
+                    }`}
+                    onClick={() => setStatusFilter("past")}
+                  >
+                    Pasadas
+                  </button>
+                </div>
+
+                {/* Ordenar por */}
+                <div className="w-full sm:w-48">
+                  <Select
+                    value={sortOrder}
+                    onValueChange={(value) =>
+                      setSortOrder(value as SortOrder)
+                    }
+                  >
+                    <SelectTrigger className="bg-white h-8">
+                      <SelectValue placeholder="Ordenar por" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="start_asc">
+                        Más próximas primero
+                      </SelectItem>
+                      <SelectItem value="start_desc">
+                        Más lejanas primero
+                      </SelectItem>
+                      <SelectItem value="created_desc">
+                        Más recientes creadas
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* filtro por estado de publicación */}
+              <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="mr-1 text-neutral-500">Publicación:</span>
+                  <button
+                    type="button"
+                    className={`rounded-full border px-3 py-1 transition-colors ${
+                      publishFilter === "all"
+                        ? "border-emerald-500 bg-emerald-50 text-emerald-800"
+                        : "border-neutral-200 text-neutral-600 hover:border-emerald-200 hover:text-emerald-800"
+                    }`}
+                    onClick={() => setPublishFilter("all")}
+                  >
+                    Todas
+                  </button>
+                  <button
+                    type="button"
+                    className={`rounded-full border px-3 py-1 transition-colors ${
+                      publishFilter === "published"
+                        ? "border-emerald-500 bg-emerald-50 text-emerald-800"
+                        : "border-neutral-200 text-neutral-600 hover:border-emerald-200 hover:text-emerald-800"
+                    }`}
+                    onClick={() => setPublishFilter("published")}
+                  >
+                    Publicadas
+                  </button>
+                  <button
+                    type="button"
+                    className={`rounded-full border px-3 py-1 transition-colors ${
+                      publishFilter === "draft"
+                        ? "border-emerald-500 bg-emerald-50 text-emerald-800"
+                        : "border-neutral-200 text-neutral-600 hover:border-emerald-200 hover:text-emerald-800"
+                    }`}
+                    onClick={() => setPublishFilter("draft")}
+                  >
+                    Borrador
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className="text-[11px] text-emerald-700 underline-offset-2 hover:underline"
+                >
+                  Limpiar filtros
+                </button>
+              </div>
+
+              {isLoading && (
+                <p className="text-xs text-muted-foreground">
+                  Cargando tus clases…
+                </p>
+              )}
+
+              {/* Empty state: sin ninguna clase creada */}
+              {!isLoading && !hasAnyClasses && (
+                <div className="mt-2 flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-emerald-100 bg-emerald-50/40 px-4 py-8 text-center text-xs text-emerald-900">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100">
+                    <Plus className="h-5 w-5" />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold">
+                      Aún no tienes clases creadas
+                    </p>
+                    <p className="text-[11px] text-emerald-800/80 max-w-sm">
+                      Empieza creando tu primera sesión. Puedes definir nivel,
+                      disciplina, capacidad y agregar un video si ya tienes
+                      contenido grabado.
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => {
+                      resetForm();
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                    }}
+                  >
+                    <Plus className="h-4 w-4" />
+                    Crear mi primera clase
+                  </Button>
+                </div>
+              )}
+
+              {/* Empty state: hay clases, pero filtros no devuelven nada */}
+              {!isLoading && hasAnyClasses && filteredClasses.length === 0 && (
+                <div className="mt-2 flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-neutral-200 bg-neutral-50/60 px-4 py-6 text-center text-xs text-neutral-700">
+                  <p className="text-sm font-semibold">
+                    No hay clases con estos filtros
+                  </p>
+                  <p className="text-[11px] max-w-sm text-neutral-600">
+                    Prueba cambiando el nivel, disciplina o estado de
+                    publicación. También puedes limpiar todos los filtros para
+                    ver el listado completo.
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-1 border-neutral-200"
+                    onClick={resetFilters}
+                  >
+                    Limpiar filtros
+                  </Button>
+                </div>
+              )}
+
+              {!isLoading && filteredClasses.length > 0 && (
+                <div className="space-y-2">
+                  {filteredClasses.map((cls) => {
+                    const status = getClassStatus(cls);
+                    const disciplineLabel = getDisciplineLabel(cls.discipline);
+                    const createdAt = formatDateShort(cls.created_at);
+                    const hasVideo = !!cls.video_url;
+                    const clsPublishStatus =
+                      (cls as { status?: PublishStatus | null }).status ??
+                      "published";
+
+                    return (
+                      <div
+                        key={cls.id}
+                        className="flex flex-col gap-2 rounded-xl border border-emerald-50 bg-white px-3 py-2.5 text-[11px] shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-md md:text-xs md:px-3.5 md:py-3"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="space-y-0.5">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-xs font-semibold text-neutral-900">
+                                {cls.title}
+                              </span>
+                              <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-800">
+                                {disciplineLabel}
+                              </span>
+                              <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-800">
+                                {cls.level}
+                              </span>
+                            </div>
+
+                            {cls.description && (
+                              <p className="line-clamp-2 text-[11px] text-muted-foreground">
+                                {cls.description}
+                              </p>
+                            )}
+                          </div>
+
+                          {/* status temporal + publicación + video */}
+                          <div className="flex flex-col items-end gap-1">
+                            <span
+                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                                status === "upcoming"
+                                  ? "bg-emerald-50 text-emerald-800 border border-emerald-100"
+                                  : status === "ondemand"
+                                  ? "bg-sky-50 text-sky-800 border border-sky-100"
+                                  : "bg-neutral-50 text-neutral-700 border border-neutral-200"
+                              }`}
+                            >
+                              {status === "upcoming" && "Próxima sesión"}
+                              {status === "ondemand" && "On-demand"}
+                              {status === "past" && "Clase pasada"}
+                            </span>
+
+                            <span
+                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                                clsPublishStatus === "published"
+                                  ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                                  : "bg-neutral-100 text-neutral-700 border border-neutral-200"
+                              }`}
+                            >
+                              {clsPublishStatus === "published"
+                                ? "Publicada"
+                                : "Borrador"}
+                            </span>
+
+                            {hasVideo && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-800">
+                                <Film className="h-3 w-3" />
+                                Video
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* meta */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {cls.start_at && (
+                              <span className="inline-flex items-center gap-1">
+                                <CalendarClock className="h-3 w-3" />
+                                {formatClassDateTime(cls.start_at)}
+                              </span>
+                            )}
+                            {typeof cls.duration_minutes === "number" && (
+                              <span>
+                                Duración:{" "}
+                                <span className="font-medium">
+                                  {cls.duration_minutes} min
+                                </span>
+                              </span>
+                            )}
+                            {typeof cls.capacity === "number" && (
+                              <span className="inline-flex items-center gap-1">
+                                <Users className="h-3 w-3" />
+                                Cupos:{" "}
+                                <span className="font-medium">
+                                  {cls.capacity}
+                                </span>
+                              </span>
+                            )}
+                          </div>
+
+                          {createdAt && (
+                            <span className="text-[10px]">
+                              Creada el{" "}
+                              <span className="font-medium">{createdAt}</span>
                             </span>
                           )}
                         </div>
-                      </TableCell>
-                      <TableCell className="text-xs md:text-sm">
-                        {cls.level}
-                      </TableCell>
-                      <TableCell className="text-xs md:text-sm text-muted-foreground">
-                        {cls.description?.slice(0, 80)}
-                        {cls.description && cls.description.length > 80
-                          ? "…"
-                          : ""}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+
+                        {/* acciones */}
+                        <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="border-neutral-200 text-[11px]"
+                            onClick={() => fillFormFromClass(cls)}
+                          >
+                            Editar
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-[11px] text-emerald-700"
+                            onClick={() => router.push(`/classes/${cls.id}`)}
+                          >
+                            Ver como alumna
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-[11px] text-red-600"
+                            onClick={() => void handleDelete(cls.id)}
+                          >
+                            Eliminar
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </div>
   );
 }

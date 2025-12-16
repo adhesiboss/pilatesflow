@@ -1,3 +1,4 @@
+// src/app/dashboard/alumna/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -28,7 +29,7 @@ function getRoleLabel(role: "admin" | "instructor" | "alumna" | undefined) {
 }
 
 function getPlanLabel(plan: "free" | "activa" | undefined | null) {
-  if (!plan) return "Plan Free";
+  if (!plan || plan === "free") return "Plan Free";
   if (plan === "activa") return "Plan Activa";
   return "Plan Free";
 }
@@ -46,11 +47,29 @@ function formatClassDateTime(start_at?: string | null): string {
   });
 }
 
+function getDisciplineLabel(raw?: string | null) {
+  if (!raw) return "Pilates";
+  const key = raw.toLowerCase();
+  const map: Record<string, string> = {
+    mat: "Mat",
+    reformer: "Reformer",
+    suelo: "Suelo",
+    embarazo: "Embarazo",
+    postparto: "Postparto",
+    recuperacion: "Recuperación",
+    movilidad: "Movilidad",
+    otra: "Pilates",
+  };
+  return map[key] ?? raw.charAt(0).toUpperCase() + raw.slice(1);
+}
+
 // límites de reservas por plan
 const PLAN_LIMITS: Record<string, number> = {
   free: 4,
   activa: 12,
 };
+
+type SortBy = "dateAsc" | "dateDesc";
 
 export default function AlumnaDashboardPage() {
   const router = useRouter();
@@ -71,6 +90,7 @@ export default function AlumnaDashboardPage() {
 
   const [search, setSearch] = useState("");
   const [levelFilter, setLevelFilter] = useState<string>("Todos");
+  const [sortBy, setSortBy] = useState<SortBy>("dateAsc");
 
   // conteo de reservas por clase
   const [bookingCounts, setBookingCounts] = useState<Record<string, number>>(
@@ -154,13 +174,19 @@ export default function AlumnaDashboardPage() {
     [bookings]
   );
 
-  const bookedClasses = useMemo(
-    () => classes.filter((cls) => bookedClassIds.has(cls.id)),
-    [classes, bookedClassIds]
-  );
+  const bookedClasses = useMemo(() => {
+    const list = classes.filter((cls) => bookedClassIds.has(cls.id));
+
+    // ordenar por fecha más próxima
+    return list.sort((a, b) => {
+      const aTime = a.start_at ? new Date(a.start_at).getTime() : Infinity;
+      const bTime = b.start_at ? new Date(b.start_at).getTime() : Infinity;
+      return aTime - bTime;
+    });
+  }, [classes, bookedClassIds]);
 
   const filteredClasses = useMemo(() => {
-    return classes.filter((cls) => {
+    const base = classes.filter((cls) => {
       const matchesLevel =
         levelFilter === "Todos" || cls.level === levelFilter;
 
@@ -171,7 +197,18 @@ export default function AlumnaDashboardPage() {
 
       return matchesLevel && matchesSearch;
     });
-  }, [classes, levelFilter, search]);
+
+    // ordenar según sortBy
+    return [...base].sort((a, b) => {
+      const aTime = a.start_at ? new Date(a.start_at).getTime() : Infinity;
+      const bTime = b.start_at ? new Date(b.start_at).getTime() : Infinity;
+
+      if (sortBy === "dateAsc") {
+        return aTime - bTime;
+      }
+      return bTime - aTime;
+    });
+  }, [classes, levelFilter, search, sortBy]);
 
   // lógica de límite por plan
   const bookingsCount = bookings.length;
@@ -249,8 +286,8 @@ export default function AlumnaDashboardPage() {
               Tus clases de Pilates
             </h1>
             <p className="text-sm text-muted-foreground mt-1 max-w-md">
-              Elige una clase, marca lo que ya practicaste y ve tu progreso
-              avanzar con cada sesión.
+              Elige una clase, reserva tu cupo y ve tu práctica crecer con cada
+              sesión.
             </p>
           </div>
 
@@ -331,10 +368,29 @@ export default function AlumnaDashboardPage() {
           )}
 
           {!isLoadingBookings && bookedClasses.length === 0 && (
-            <p className="text-xs text-muted-foreground">
-              🌱 Aún no tienes clases reservadas. Elige una clase disponible y
-              resérvala para sumarla a tu agenda.
-            </p>
+            <Card className="border-dashed border-emerald-100 bg-emerald-50/60">
+              <CardContent className="py-4 space-y-2 text-xs text-emerald-900">
+                <p className="font-medium">
+                  🌱 Aún no tienes clases reservadas.
+                </p>
+                <p>
+                  Cuando reserves una clase, la verás aquí primero, ordenada por
+                  la fecha más próxima para que no se te pase ninguna sesión.
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-1 border-emerald-200 text-emerald-800 hover:border-emerald-300"
+                  onClick={() => {
+                    // simple scroll a la sección de clases disponibles
+                    const el = document.getElementById("disponibles");
+                    if (el) el.scrollIntoView({ behavior: "smooth" });
+                  }}
+                >
+                  Ver clases disponibles
+                </Button>
+              </CardContent>
+            </Card>
           )}
 
           {!isLoadingBookings && bookedClasses.length > 0 && (
@@ -347,6 +403,10 @@ export default function AlumnaDashboardPage() {
                     : null;
                 const isFull =
                   capacity !== null && bookingsCountForClass >= capacity;
+
+                const disciplineLabel = getDisciplineLabel(
+                  (cls as { discipline?: string | null }).discipline ?? null
+                );
 
                 return (
                   <Card
@@ -362,9 +422,14 @@ export default function AlumnaDashboardPage() {
                         {cls.title}
                       </h3>
                       <div className="mt-2 flex items-center justify-between gap-2">
-                        <span className="inline-flex items-center rounded-full bg-emerald-100/90 px-2 py-0.5 text-[10px] font-medium text-emerald-800">
-                          {cls.level}
-                        </span>
+                        <div className="flex items-center gap-1">
+                          <span className="inline-flex items-center rounded-full bg-emerald-100/90 px-2 py-0.5 text-[10px] font-medium text-emerald-800">
+                            {disciplineLabel}
+                          </span>
+                          <span className="inline-flex items-center rounded-full bg-emerald-100/90 px-2 py-0.5 text-[10px] font-medium text-emerald-800">
+                            {cls.level}
+                          </span>
+                        </div>
                         {isFull && (
                           <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-700">
                             Clase llena
@@ -391,11 +456,20 @@ export default function AlumnaDashboardPage() {
                             : bookingsCountForClass}
                         </span>
                       </p>
-                      <div className="pt-1">
+
+                      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="w-full sm:w-auto text-[11px] text-emerald-700"
+                          onClick={() => router.push(`/classes/${cls.id}`)}
+                        >
+                          Ver clase
+                        </Button>
                         <Button
                           size="sm"
                           variant="outline"
-                          className="w-full"
+                          className="w-full sm:w-auto"
                           onClick={() => void handleToggleBooking(cls.id)}
                         >
                           Cancelar reserva
@@ -410,7 +484,10 @@ export default function AlumnaDashboardPage() {
         </section>
 
         {/* Filtros + listado general */}
-        <section className="space-y-4 pt-4 border-t">
+        <section
+          id="disponibles"
+          className="space-y-4 pt-4 border-t border-emerald-50"
+        >
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div className="flex-1">
               <Input
@@ -421,21 +498,42 @@ export default function AlumnaDashboardPage() {
               />
             </div>
 
-            <div className="w-full md:w-52">
-              <Select
-                value={levelFilter}
-                onValueChange={(value) => setLevelFilter(value)}
-              >
-                <SelectTrigger className="bg-white">
-                  <SelectValue placeholder="Filtrar por nivel" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Todos">Todos los niveles</SelectItem>
-                  <SelectItem value="Básico">Básico</SelectItem>
-                  <SelectItem value="Intermedio">Intermedio</SelectItem>
-                  <SelectItem value="Avanzado">Avanzado</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-center">
+              <div className="w-full md:w-40">
+                <Select
+                  value={levelFilter}
+                  onValueChange={(value) => setLevelFilter(value)}
+                >
+                  <SelectTrigger className="bg-white">
+                    <SelectValue placeholder="Filtrar por nivel" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Todos">Todos los niveles</SelectItem>
+                    <SelectItem value="Básico">Básico</SelectItem>
+                    <SelectItem value="Intermedio">Intermedio</SelectItem>
+                    <SelectItem value="Avanzado">Avanzado</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="w-full md:w-48">
+                <Select
+                  value={sortBy}
+                  onValueChange={(value) => setSortBy(value as SortBy)}
+                >
+                  <SelectTrigger className="bg-white">
+                    <SelectValue placeholder="Ordenar por" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="dateAsc">
+                      Fecha más próxima primero
+                    </SelectItem>
+                    <SelectItem value="dateDesc">
+                      Fecha más lejana primero
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
 
@@ -446,10 +544,29 @@ export default function AlumnaDashboardPage() {
           )}
 
           {!isLoadingClasses && filteredClasses.length === 0 && (
-            <p className="text-sm text-muted-foreground">
-              No hay clases con estos filtros. Prueba cambiar el nivel o limpiar
-              la búsqueda.
-            </p>
+            <Card className="border-dashed border-emerald-100 bg-white/80">
+              <CardContent className="py-4 space-y-2 text-xs text-neutral-800">
+                <p className="font-medium">
+                  No encontramos clases con estos filtros.
+                </p>
+                <p className="text-neutral-600">
+                  Prueba cambiar el nivel, la búsqueda o volver a ver todas las
+                  clases disponibles.
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-1 border-emerald-200 text-emerald-800 hover:border-emerald-300"
+                  onClick={() => {
+                    setSearch("");
+                    setLevelFilter("Todos");
+                    setSortBy("dateAsc");
+                  }}
+                >
+                  Limpiar filtros
+                </Button>
+              </CardContent>
+            </Card>
           )}
 
           {!isLoadingClasses && filteredClasses.length > 0 && (
@@ -476,12 +593,16 @@ export default function AlumnaDashboardPage() {
                   ? `Límite de plan (${bookingsCount}/${planMaxBookings})`
                   : "Reservar clase";
 
+                const disciplineLabel = getDisciplineLabel(
+                  (cls as { discipline?: string | null }).discipline ?? null
+                );
+
                 return (
                   <Card
                     key={cls.id}
                     className="overflow-hidden border-emerald-50 bg-white transition hover:shadow-md hover:-translate-y-0.5"
                   >
-                    {/* Cabecera visual como catálogo público */}
+                    {/* Cabecera visual */}
                     <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 px-4 py-3 text-emerald-50">
                       <div className="flex items-start justify-between gap-2">
                         <div>
@@ -502,9 +623,14 @@ export default function AlumnaDashboardPage() {
                       </div>
 
                       <div className="mt-2 flex items-center justify-between gap-2">
-                        <span className="inline-flex items-center rounded-full bg-emerald-100/90 px-2 py-0.5 text-[10px] font-medium text-emerald-800">
-                          {cls.level}
-                        </span>
+                        <div className="flex items-center gap-1">
+                          <span className="inline-flex items-center rounded-full bg-emerald-100/90 px-2 py-0.5 text-[10px] font-medium text-emerald-800">
+                            {disciplineLabel}
+                          </span>
+                          <span className="inline-flex items-center rounded-full bg-emerald-100/90 px-2 py-0.5 text-[10px] font-medium text-emerald-800">
+                            {cls.level}
+                          </span>
+                        </div>
                         {isFull && (
                           <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-700">
                             Clase llena
@@ -532,7 +658,7 @@ export default function AlumnaDashboardPage() {
                         </span>
                       </p>
 
-                      <div className="pt-1">
+                      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                         <Button
                           size="sm"
                           variant={
@@ -543,13 +669,22 @@ export default function AlumnaDashboardPage() {
                               : "default"
                           }
                           disabled={disabled}
-                          className="w-full"
+                          className="w-full sm:w-auto"
                           onClick={() => {
                             if (disabled) return;
                             void handleToggleBooking(cls.id);
                           }}
                         >
                           {label}
+                        </Button>
+
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="w-full sm:w-auto text-[11px] text-emerald-700"
+                          onClick={() => router.push(`/classes/${cls.id}`)}
+                        >
+                          Ver clase
                         </Button>
                       </div>
                     </CardContent>
