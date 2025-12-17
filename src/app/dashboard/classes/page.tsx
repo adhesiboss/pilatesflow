@@ -37,6 +37,8 @@ import {
   ListChecks,
   Plus,
   Users,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -149,41 +151,53 @@ export default function DashboardClassesPage() {
   }, [fetchClasses]);
 
   // ---- resumen superior ----
-  const { totalClasses, classesWithVideo, upcomingThisWeek } = useMemo(() => {
-    if (!classes || classes.length === 0) {
-      return {
-        totalClasses: 0,
-        classesWithVideo: 0,
-        upcomingThisWeek: 0,
-      };
-    }
+  const { totalClasses, classesWithVideo, upcomingThisWeek, publishedCount, draftCount } =
+    useMemo(() => {
+      if (!classes || classes.length === 0) {
+        return {
+          totalClasses: 0,
+          classesWithVideo: 0,
+          upcomingThisWeek: 0,
+          publishedCount: 0,
+          draftCount: 0,
+        };
+      }
 
-    const now = new Date();
-    const weekAhead = new Date();
-    weekAhead.setDate(now.getDate() + 7);
+      const now = new Date();
+      const weekAhead = new Date();
+      weekAhead.setDate(now.getDate() + 7);
 
-    let withVideo = 0;
-    let upcomingWeek = 0;
+      let withVideo = 0;
+      let upcomingWeek = 0;
+      let published = 0;
+      let draft = 0;
 
-    classes.forEach((cls) => {
-      if (cls.video_url) withVideo += 1;
+      classes.forEach((cls) => {
+        if (cls.video_url) withVideo += 1;
 
-      if (cls.start_at) {
-        const start = new Date(cls.start_at);
-        if (!Number.isNaN(start.getTime())) {
-          if (start >= now && start <= weekAhead) {
-            upcomingWeek += 1;
+        if (cls.start_at) {
+          const start = new Date(cls.start_at);
+          if (!Number.isNaN(start.getTime())) {
+            if (start >= now && start <= weekAhead) {
+              upcomingWeek += 1;
+            }
           }
         }
-      }
-    });
 
-    return {
-      totalClasses: classes.length,
-      classesWithVideo: withVideo,
-      upcomingThisWeek: upcomingWeek,
-    };
-  }, [classes]);
+        const publishStatus =
+          (cls as { status?: PublishStatus | null }).status ?? "published";
+        if (publishStatus === "published") published += 1;
+        if (publishStatus === "draft") draft += 1;
+      });
+
+      return {
+        totalClasses: classes.length,
+        classesWithVideo: withVideo,
+        upcomingThisWeek: upcomingWeek,
+        publishedCount: published,
+        draftCount: draft,
+      };
+    }, [classes]);
 
   // ---- estado de filtros ----
   const [search, setSearch] = useState("");
@@ -192,8 +206,11 @@ export default function DashboardClassesPage() {
   const [statusFilter, setStatusFilter] = useState<ClassStatus | "all">("all");
   const [publishFilter, setPublishFilter] =
     useState<"all" | PublishStatus>("all");
-  const [sortOrder, setSortOrder] =
-    useState<SortOrder>("start_asc");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("start_asc");
+
+  // paginación (solo en el listado)
+  const [page, setPage] = useState<number>(1);
+  const pageSize = 6;
 
   // disciplinas disponibles dinámicas
   const availableDisciplines = useMemo(() => {
@@ -275,6 +292,26 @@ export default function DashboardClassesPage() {
     sortOrder,
   ]);
 
+  // totals & paginación
+  const totalFiltered = filteredClasses.length;
+  const totalPages =
+    totalFiltered === 0 ? 1 : Math.ceil(totalFiltered / pageSize);
+  const currentPage = Math.min(page, totalPages);
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+  const pagedClasses = filteredClasses.slice(startIndex, endIndex);
+
+  // reset filtros
+  function resetFilters() {
+    setSearch("");
+    setLevelFilter("Todos");
+    setDisciplineFilter("all");
+    setStatusFilter("all");
+    setPublishFilter("all");
+    setSortOrder("start_asc");
+    setPage(1);
+  }
+
   // ---- estado de formulario (crear/editar) ----
   const [editingId, setEditingId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
@@ -288,15 +325,6 @@ export default function DashboardClassesPage() {
   const [description, setDescription] = useState("");
   const [publishStatus, setPublishStatus] =
     useState<PublishStatus>("published");
-
-  function resetFilters() {
-    setSearch("");
-    setLevelFilter("Todos");
-    setDisciplineFilter("all");
-    setStatusFilter("all");
-    setPublishFilter("all");
-    setSortOrder("start_asc");
-  }
 
   function resetForm() {
     setEditingId(null);
@@ -349,6 +377,8 @@ export default function DashboardClassesPage() {
     const storedStatus =
       (cls as { status?: PublishStatus | null }).status ?? "published";
     setPublishStatus(storedStatus);
+    // al editar, te dejo en página 1 para no “perder” la clase
+    setPage(1);
   }
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
@@ -424,6 +454,7 @@ export default function DashboardClassesPage() {
         description: "Ya aparece en tu listado de clases.",
       });
       resetForm();
+      setPage(1);
     }
   }
 
@@ -458,6 +489,10 @@ export default function DashboardClassesPage() {
   const roleLabel = getRoleLabel(profile.role as Role);
   const hasAnyClasses = classes.length > 0;
 
+  const showingFrom = totalFiltered === 0 ? 0 : startIndex + 1;
+  const showingTo =
+    totalFiltered === 0 ? 0 : Math.min(endIndex, totalFiltered);
+
   return (
     <div className="min-h-[calc(100vh-3.5rem)] bg-gradient-to-b from-emerald-50/40 to-white">
       <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8 md:py-10 md:gap-8">
@@ -480,7 +515,7 @@ export default function DashboardClassesPage() {
             <Badge className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-medium text-emerald-800">
               {roleLabel}
             </Badge>
-            <div className="flex gap-2 text-[11px] text-muted-foreground">
+            <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
               <span className="inline-flex items-center gap-1 rounded-full bg-white/70 px-2 py-0.5">
                 <ListChecks className="h-3 w-3" />
                 {totalClasses} clase
@@ -493,6 +528,11 @@ export default function DashboardClassesPage() {
               <span className="inline-flex items-center gap-1 rounded-full bg-white/70 px-2 py-0.5">
                 <CalendarClock className="h-3 w-3" />
                 {upcomingThisWeek} esta semana
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-white/70 px-2 py-0.5">
+                Publicadas:{" "}
+                <span className="font-medium">{publishedCount}</span> · Borrador:{" "}
+                <span className="font-medium">{draftCount}</span>
               </span>
             </div>
           </div>
@@ -750,13 +790,19 @@ export default function DashboardClassesPage() {
                 <Input
                   placeholder="Buscar por título, descripción o disciplina…"
                   value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    setPage(1);
+                  }}
                   className="bg-white"
                 />
 
                 <Select
                   value={levelFilter}
-                  onValueChange={(value) => setLevelFilter(value)}
+                  onValueChange={(value) => {
+                    setLevelFilter(value);
+                    setPage(1);
+                  }}
                 >
                   <SelectTrigger className="bg-white">
                     <SelectValue placeholder="Nivel" />
@@ -771,7 +817,10 @@ export default function DashboardClassesPage() {
 
                 <Select
                   value={disciplineFilter}
-                  onValueChange={(value) => setDisciplineFilter(value)}
+                  onValueChange={(value) => {
+                    setDisciplineFilter(value);
+                    setPage(1);
+                  }}
                 >
                   <SelectTrigger className="bg-white">
                     <SelectValue placeholder="Disciplina" />
@@ -797,7 +846,10 @@ export default function DashboardClassesPage() {
                         ? "border-emerald-500 bg-emerald-50 text-emerald-800"
                         : "border-neutral-200 text-neutral-600 hover:border-emerald-200 hover:text-emerald-800"
                     }`}
-                    onClick={() => setStatusFilter("all")}
+                    onClick={() => {
+                      setStatusFilter("all");
+                      setPage(1);
+                    }}
                   >
                     Todas
                   </button>
@@ -808,7 +860,10 @@ export default function DashboardClassesPage() {
                         ? "border-emerald-500 bg-emerald-50 text-emerald-800"
                         : "border-neutral-200 text-neutral-600 hover:border-emerald-200 hover:text-emerald-800"
                     }`}
-                    onClick={() => setStatusFilter("upcoming")}
+                    onClick={() => {
+                      setStatusFilter("upcoming");
+                      setPage(1);
+                    }}
                   >
                     Próximas
                   </button>
@@ -819,7 +874,10 @@ export default function DashboardClassesPage() {
                         ? "border-emerald-500 bg-emerald-50 text-emerald-800"
                         : "border-neutral-200 text-neutral-600 hover:border-emerald-200 hover:text-emerald-800"
                     }`}
-                    onClick={() => setStatusFilter("ondemand")}
+                    onClick={() => {
+                      setStatusFilter("ondemand");
+                      setPage(1);
+                    }}
                   >
                     On-demand
                   </button>
@@ -830,7 +888,10 @@ export default function DashboardClassesPage() {
                         ? "border-emerald-500 bg-emerald-50 text-emerald-800"
                         : "border-neutral-200 text-neutral-600 hover:border-emerald-200 hover:text-emerald-800"
                     }`}
-                    onClick={() => setStatusFilter("past")}
+                    onClick={() => {
+                      setStatusFilter("past");
+                      setPage(1);
+                    }}
                   >
                     Pasadas
                   </button>
@@ -840,9 +901,10 @@ export default function DashboardClassesPage() {
                 <div className="w-full sm:w-48">
                   <Select
                     value={sortOrder}
-                    onValueChange={(value) =>
-                      setSortOrder(value as SortOrder)
-                    }
+                    onValueChange={(value) => {
+                      setSortOrder(value as SortOrder);
+                      setPage(1);
+                    }}
                   >
                     <SelectTrigger className="bg-white h-8">
                       <SelectValue placeholder="Ordenar por" />
@@ -873,7 +935,10 @@ export default function DashboardClassesPage() {
                         ? "border-emerald-500 bg-emerald-50 text-emerald-800"
                         : "border-neutral-200 text-neutral-600 hover:border-emerald-200 hover:text-emerald-800"
                     }`}
-                    onClick={() => setPublishFilter("all")}
+                    onClick={() => {
+                      setPublishFilter("all");
+                      setPage(1);
+                    }}
                   >
                     Todas
                   </button>
@@ -884,7 +949,10 @@ export default function DashboardClassesPage() {
                         ? "border-emerald-500 bg-emerald-50 text-emerald-800"
                         : "border-neutral-200 text-neutral-600 hover:border-emerald-200 hover:text-emerald-800"
                     }`}
-                    onClick={() => setPublishFilter("published")}
+                    onClick={() => {
+                      setPublishFilter("published");
+                      setPage(1);
+                    }}
                   >
                     Publicadas
                   </button>
@@ -895,7 +963,10 @@ export default function DashboardClassesPage() {
                         ? "border-emerald-500 bg-emerald-50 text-emerald-800"
                         : "border-neutral-200 text-neutral-600 hover:border-emerald-200 hover:text-emerald-800"
                     }`}
-                    onClick={() => setPublishFilter("draft")}
+                    onClick={() => {
+                      setPublishFilter("draft");
+                      setPage(1);
+                    }}
                   >
                     Borrador
                   </button>
@@ -947,7 +1018,7 @@ export default function DashboardClassesPage() {
               )}
 
               {/* Empty state: hay clases, pero filtros no devuelven nada */}
-              {!isLoading && hasAnyClasses && filteredClasses.length === 0 && (
+              {!isLoading && hasAnyClasses && totalFiltered === 0 && (
                 <div className="mt-2 flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-neutral-200 bg-neutral-50/60 px-4 py-6 text-center text-xs text-neutral-700">
                   <p className="text-sm font-semibold">
                     No hay clases con estos filtros
@@ -968,147 +1039,212 @@ export default function DashboardClassesPage() {
                 </div>
               )}
 
-              {!isLoading && filteredClasses.length > 0 && (
-                <div className="space-y-2">
-                  {filteredClasses.map((cls) => {
-                    const status = getClassStatus(cls);
-                    const disciplineLabel = getDisciplineLabel(cls.discipline);
-                    const createdAt = formatDateShort(cls.created_at);
-                    const hasVideo = !!cls.video_url;
-                    const clsPublishStatus =
-                      (cls as { status?: PublishStatus | null }).status ??
-                      "published";
+              {/* LISTADO CON PAGINACIÓN */}
+              {!isLoading && totalFiltered > 0 && (
+                <>
+                  <div className="flex items-center justify-between text-[11px] text-neutral-500">
+                    <span>
+                      Mostrando{" "}
+                      <span className="font-medium">
+                        {showingFrom}–{showingTo}
+                      </span>{" "}
+                      de{" "}
+                      <span className="font-medium">
+                        {totalFiltered}
+                      </span>{" "}
+                      clases filtradas
+                    </span>
+                    {totalPages > 1 && (
+                      <span>
+                        Página{" "}
+                        <span className="font-medium">{currentPage}</span> de{" "}
+                        <span className="font-medium">{totalPages}</span>
+                      </span>
+                    )}
+                  </div>
 
-                    return (
-                      <div
-                        key={cls.id}
-                        className="flex flex-col gap-2 rounded-xl border border-emerald-50 bg-white px-3 py-2.5 text-[11px] shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-md md:text-xs md:px-3.5 md:py-3"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="space-y-0.5">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <span className="text-xs font-semibold text-neutral-900">
-                                {cls.title}
-                              </span>
-                              <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-800">
-                                {disciplineLabel}
-                              </span>
-                              <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-800">
-                                {cls.level}
-                              </span>
+                  <div className="space-y-2">
+                    {pagedClasses.map((cls) => {
+                      const status = getClassStatus(cls);
+                      const disciplineLabel = getDisciplineLabel(
+                        cls.discipline
+                      );
+                      const createdAt = formatDateShort(cls.created_at);
+                      const hasVideo = !!cls.video_url;
+                      const clsPublishStatus =
+                        (cls as { status?: PublishStatus | null }).status ??
+                        "published";
+
+                      return (
+                        <div
+                          key={cls.id}
+                          className="flex flex-col gap-2 rounded-xl border border-emerald-50 bg-white px-3 py-2.5 text-[11px] shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-md md:text-xs md:px-3.5 md:py-3"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="space-y-0.5">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="text-xs font-semibold text-neutral-900">
+                                  {cls.title}
+                                </span>
+                                <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-800">
+                                  {disciplineLabel}
+                                </span>
+                                <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-800">
+                                  {cls.level}
+                                </span>
+                              </div>
+
+                              {cls.description && (
+                                <p className="line-clamp-2 text-[11px] text-muted-foreground">
+                                  {cls.description}
+                                </p>
+                              )}
                             </div>
 
-                            {cls.description && (
-                              <p className="line-clamp-2 text-[11px] text-muted-foreground">
-                                {cls.description}
-                              </p>
-                            )}
-                          </div>
-
-                          {/* status temporal + publicación + video */}
-                          <div className="flex flex-col items-end gap-1">
-                            <span
-                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                                status === "upcoming"
-                                  ? "bg-emerald-50 text-emerald-800 border border-emerald-100"
-                                  : status === "ondemand"
-                                  ? "bg-sky-50 text-sky-800 border border-sky-100"
-                                  : "bg-neutral-50 text-neutral-700 border border-neutral-200"
-                              }`}
-                            >
-                              {status === "upcoming" && "Próxima sesión"}
-                              {status === "ondemand" && "On-demand"}
-                              {status === "past" && "Clase pasada"}
-                            </span>
-
-                            <span
-                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                                clsPublishStatus === "published"
-                                  ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                                  : "bg-neutral-100 text-neutral-700 border border-neutral-200"
-                              }`}
-                            >
-                              {clsPublishStatus === "published"
-                                ? "Publicada"
-                                : "Borrador"}
-                            </span>
-
-                            {hasVideo && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-800">
-                                <Film className="h-3 w-3" />
-                                Video
+                            {/* status temporal + publicación + video */}
+                            <div className="flex flex-col items-end gap-1">
+                              <span
+                                className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                                  status === "upcoming"
+                                    ? "bg-emerald-50 text-emerald-800 border border-emerald-100"
+                                    : status === "ondemand"
+                                    ? "bg-sky-50 text-sky-800 border border-sky-100"
+                                    : "bg-neutral-50 text-neutral-700 border border-neutral-200"
+                                }`}
+                              >
+                                {status === "upcoming" && "Próxima sesión"}
+                                {status === "ondemand" && "On-demand"}
+                                {status === "past" && "Clase pasada"}
                               </span>
-                            )}
-                          </div>
-                        </div>
 
-                        {/* meta */}
-                        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
-                          <div className="flex flex-wrap items-center gap-2">
-                            {cls.start_at && (
-                              <span className="inline-flex items-center gap-1">
-                                <CalendarClock className="h-3 w-3" />
-                                {formatClassDateTime(cls.start_at)}
+                              <span
+                                className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                                  clsPublishStatus === "published"
+                                    ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                                    : "bg-neutral-100 text-neutral-700 border border-neutral-200"
+                                }`}
+                              >
+                                {clsPublishStatus === "published"
+                                  ? "Publicada"
+                                  : "Borrador"}
                               </span>
-                            )}
-                            {typeof cls.duration_minutes === "number" && (
-                              <span>
-                                Duración:{" "}
-                                <span className="font-medium">
-                                  {cls.duration_minutes} min
+
+                              {hasVideo && (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-800">
+                                  <Film className="h-3 w-3" />
+                                  Video
                                 </span>
-                              </span>
-                            )}
-                            {typeof cls.capacity === "number" && (
-                              <span className="inline-flex items-center gap-1">
-                                <Users className="h-3 w-3" />
-                                Cupos:{" "}
-                                <span className="font-medium">
-                                  {cls.capacity}
+                              )}
+                            </div>
+                          </div>
+
+                          {/* meta */}
+                          <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                            <div className="flex flex-wrap items-center gap-2">
+                              {cls.start_at && (
+                                <span className="inline-flex items-center gap-1">
+                                  <CalendarClock className="h-3 w-3" />
+                                  {formatClassDateTime(cls.start_at)}
                                 </span>
+                              )}
+                              {typeof cls.duration_minutes === "number" && (
+                                <span>
+                                  Duración:{" "}
+                                  <span className="font-medium">
+                                    {cls.duration_minutes} min
+                                  </span>
+                                </span>
+                              )}
+                              {typeof cls.capacity === "number" && (
+                                <span className="inline-flex items-center gap-1">
+                                  <Users className="h-3 w-3" />
+                                  Cupos:{" "}
+                                  <span className="font-medium">
+                                    {cls.capacity}
+                                  </span>
+                                </span>
+                              )}
+                            </div>
+
+                            {createdAt && (
+                              <span className="text-[10px]">
+                                Creada el{" "}
+                                <span className="font-medium">{createdAt}</span>
                               </span>
                             )}
                           </div>
 
-                          {createdAt && (
-                            <span className="text-[10px]">
-                              Creada el{" "}
-                              <span className="font-medium">{createdAt}</span>
-                            </span>
-                          )}
+                          {/* acciones */}
+                          <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="border-neutral-200 text-[11px]"
+                              onClick={() => fillFormFromClass(cls)}
+                            >
+                              Editar
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-[11px] text-emerald-700"
+                              onClick={() => router.push(`/classes/${cls.id}`)}
+                            >
+                              Ver como alumna
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-[11px] text-red-600"
+                              onClick={() => void handleDelete(cls.id)}
+                            >
+                              Eliminar
+                            </Button>
+                          </div>
                         </div>
+                      );
+                    })}
+                  </div>
 
-                        {/* acciones */}
-                        <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="border-neutral-200 text-[11px]"
-                            onClick={() => fillFormFromClass(cls)}
-                          >
-                            Editar
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="text-[11px] text-emerald-700"
-                            onClick={() => router.push(`/classes/${cls.id}`)}
-                          >
-                            Ver como alumna
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="text-[11px] text-red-600"
-                            onClick={() => void handleDelete(cls.id)}
-                          >
-                            Eliminar
-                          </Button>
-                        </div>
+                  {/* Controles de paginación */}
+                  {totalPages > 1 && (
+                    <div className="mt-3 flex items-center justify-between text-[11px] text-neutral-600">
+                      <span>
+                        Página{" "}
+                        <span className="font-medium">{currentPage}</span> de{" "}
+                        <span className="font-medium">{totalPages}</span>
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="h-7 w-7 border-neutral-200"
+                          disabled={currentPage <= 1}
+                          onClick={() =>
+                            setPage((prev) => Math.max(1, prev - 1))
+                          }
+                        >
+                          <ChevronLeft className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="h-7 w-7 border-neutral-200"
+                          disabled={currentPage >= totalPages}
+                          onClick={() =>
+                            setPage((prev) =>
+                              Math.min(totalPages, prev + 1)
+                            )
+                          }
+                        >
+                          <ChevronRight className="h-3 w-3" />
+                        </Button>
                       </div>
-                    );
-                  })}
-                </div>
+                    </div>
+                  )}
+                </>
               )}
             </CardContent>
           </Card>

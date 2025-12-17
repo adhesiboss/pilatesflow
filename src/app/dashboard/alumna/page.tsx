@@ -69,6 +69,38 @@ const PLAN_LIMITS: Record<string, number> = {
   activa: 12,
 };
 
+// Intenciones suaves del día
+const DAILY_INTENTIONS: {
+  id: string;
+  title: string;
+  description: string;
+}[] = [
+  {
+    id: "suavizar-dia",
+    title: "Suavizar el día",
+    description:
+      "Antes de moverte, nota cómo llegas hoy: con sueño, con prisa, con energía. No hace falta cambiar nada, solo reconocerlo. Desde ahí, deja que la respiración vaya desanudando las tensiones.",
+  },
+  {
+    id: "habitar-cuerpo",
+    title: "Habitar tu cuerpo",
+    description:
+      "En cada postura, vuelve a las sensaciones: peso, apoyo, temperatura. Imagina que tu práctica es una forma de volver a casa, a tu propio cuerpo, con amabilidad.",
+  },
+  {
+    id: "espacio-para-ti",
+    title: "Un pequeño espacio para ti",
+    description:
+      "Por estos minutos, no tienes que rendirle cuentas a nadie. Esta clase es un espacio protegido para escucharte, pausar y recargar tu energía desde adentro.",
+  },
+  {
+    id: "respirar-mas-lento",
+    title: "Respirar un poco más lento",
+    description:
+      "Si la mente va rápido, deja que la respiración marque otro ritmo. Inhala por la nariz contando hasta cuatro, exhala un poco más largo. Tu práctica hoy es simplemente acompañar ese pulso.",
+  },
+];
+
 type SortBy = "dateAsc" | "dateDesc";
 
 export default function AlumnaDashboardPage() {
@@ -168,6 +200,17 @@ export default function AlumnaDashboardPage() {
 
   const roleLabel = getRoleLabel(profile?.role);
   const planLabel = getPlanLabel(profile?.plan ?? "free");
+
+  // Intención del día (determinística por fecha)
+  const dailyIntention = useMemo(() => {
+    const today = new Date();
+    const hash =
+      today.getFullYear() * 10000 +
+      (today.getMonth() + 1) * 100 +
+      today.getDate();
+    const idx = Math.abs(hash) % DAILY_INTENTIONS.length;
+    return DAILY_INTENTIONS[idx];
+  }, []);
 
   const bookedClassIds = useMemo(
     () => new Set(bookings.map((b) => b.classId)),
@@ -306,6 +349,25 @@ export default function AlumnaDashboardPage() {
             </div>
           </div>
         </div>
+
+        {/* Intención del día */}
+        <Card className="border-emerald-100 bg-white/90">
+          <CardContent className="py-4 space-y-2 text-xs md:text-sm text-emerald-900">
+            <p className="text-[11px] uppercase tracking-[0.2em] text-emerald-600">
+              Intención del día
+            </p>
+            <p className="text-sm font-semibold text-neutral-900">
+              {dailyIntention.title}
+            </p>
+            <p className="text-xs md:text-sm text-emerald-900/80 max-w-2xl">
+              {dailyIntention.description}
+            </p>
+            <p className="text-[11px] text-emerald-800/80">
+              Puedes leer esta frase antes de elegir tu clase y dejar que tu práctica
+              sea una pequeña ceremonia para ti.
+            </p>
+          </CardContent>
+        </Card>
 
         {/* Card de plan con barra de progreso */}
         {planMaxBookings !== null && (
@@ -544,7 +606,7 @@ export default function AlumnaDashboardPage() {
           )}
 
           {!isLoadingClasses && filteredClasses.length === 0 && (
-            <Card className="border-dashed border-emerald-100 bg-white/80">
+            <Card className="border-dashed border-emerald-100 bg:white/80">
               <CardContent className="py-4 space-y-2 text-xs text-neutral-800">
                 <p className="font-medium">
                   No encontramos clases con estos filtros.

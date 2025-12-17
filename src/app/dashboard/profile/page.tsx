@@ -3,7 +3,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
 
 import { useAuthStore } from "@/lib/auth-store";
 import { useClassesStore, type ClassItem } from "@/lib/classes-store";
@@ -24,6 +23,17 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
+
+// 📊 Recharts para la gráfica
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+} from "recharts";
 
 type Role = "admin" | "instructor" | "alumna";
 
@@ -247,7 +257,10 @@ export default function ProfilePage() {
 
       minutesSum += duration;
 
-      if (!lastPracticeIso || new Date(completedIso) > new Date(lastPracticeIso)) {
+      if (
+        !lastPracticeIso ||
+        new Date(completedIso) > new Date(lastPracticeIso)
+      ) {
         lastPracticeIso = completedIso;
       }
 
@@ -296,6 +309,16 @@ export default function ProfilePage() {
       monthOptions,
     };
   }, [role, progressItems, classes]);
+
+  // 📊 datos para la gráfica mensual (minutos por mes)
+  const chartData = useMemo(
+    () =>
+      monthOptions.map((m) => ({
+        month: m.label.replace(/ de \d{4}/, ""), // ej: "marzo 2025" -> "marzo"
+        minutes: m.totalMinutes,
+      })),
+    [monthOptions]
+  );
 
   // historial filtrado por mes seleccionado
   const filteredHistory = useMemo(() => {
@@ -406,12 +429,7 @@ export default function ProfilePage() {
         {/* Resumen de progreso (solo alumna) */}
         {isAlumna && (
           <>
-            <motion.section
-              className="space-y-4"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4 }}
-            >
+            <section className="space-y-4">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold">Resumen de tu práctica</h2>
                 {(isLoadingClasses || isLoadingProgress) && (
@@ -421,193 +439,132 @@ export default function ProfilePage() {
                 )}
               </div>
 
-              {/* Tarjetas métricas con animación */}
               <div className="grid gap-4 md:grid-cols-3">
                 {/* Clases completadas */}
-                <motion.div
-                  whileHover={{ y: -2, scale: 1.01 }}
-                  transition={{ type: "spring", stiffness: 250, damping: 20 }}
-                >
-                  <Card className="border-emerald-50 bg-white/90">
-                    <CardContent className="py-4 space-y-1">
-                      <p className="text-[11px] text-muted-foreground">
-                        Clases completadas
-                      </p>
-                      <p className="text-2xl font-semibold">{completedCount}</p>
-                      <p className="text-[11px] text-muted-foreground">
-                        Cada clase cuenta como un paso más en tu práctica.
-                      </p>
-                    </CardContent>
-                  </Card>
-                </motion.div>
+                <Card className="border-emerald-50 bg-white/90">
+                  <CardContent className="py-4 space-y-1">
+                    <p className="text-[11px] text-muted-foreground">
+                      Clases completadas
+                    </p>
+                    <p className="text-2xl font-semibold">{completedCount}</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Cada clase cuenta como un paso más en tu práctica.
+                    </p>
+                  </CardContent>
+                </Card>
 
                 {/* Tiempo estimado */}
-                <motion.div
-                  whileHover={{ y: -2, scale: 1.01 }}
-                  transition={{
-                    type: "spring",
-                    stiffness: 250,
-                    damping: 20,
-                    delay: 0.02,
-                  }}
-                >
-                  <Card className="border-emerald-50 bg-white/90">
-                    <CardContent className="py-4 space-y-1">
+                <Card className="border-emerald-50 bg-white/90">
+                  <CardContent className="py-4 space-y-1">
+                    <p className="text-[11px] text-muted-foreground">
+                      Tiempo estimado practicado
+                    </p>
+                    <p className="text-lg font-semibold">
+                      {formatDuration(totalMinutes)}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Sumando la duración de las clases que marcaste como
+                      completadas.
+                    </p>
+                  </CardContent>
+                </Card>
+
+                {/* Última práctica + racha */}
+                <Card className="border-emerald-50 bg-white/90">
+                  <CardContent className="py-4 space-y-2">
+                    <div>
                       <p className="text-[11px] text-muted-foreground">
-                        Tiempo estimado practicado
+                        Última práctica
                       </p>
-                      <p className="text-lg font-semibold">
-                        {formatDuration(totalMinutes)}
+                      <p className="text-sm font-semibold">
+                        {lastPractice
+                          ? formatDateTime(lastPractice)
+                          : "Aún no registras prácticas"}
                       </p>
+                    </div>
+
+                    {/* separador simple */}
+                    <div className="my-1 h-px w-full bg-emerald-50" />
+
+                    <div>
                       <p className="text-[11px] text-muted-foreground">
-                        Sumando la duración de las clases que marcaste como
-                        completadas.
+                        Racha actual
                       </p>
-                    </CardContent>
-                  </Card>
-                </motion.div>
-
-                {/* Última práctica + racha + barrita visual */}
-                <motion.div
-                  whileHover={{ y: -2, scale: 1.01 }}
-                  transition={{
-                    type: "spring",
-                    stiffness: 250,
-                    damping: 20,
-                    delay: 0.04,
-                  }}
-                >
-                  <Card className="border-emerald-50 bg-white/90">
-                    <CardContent className="py-4 space-y-3">
-                      <div>
-                        <p className="text-[11px] text-muted-foreground">
-                          Última práctica
+                      <p className="text-sm font-semibold">
+                        {currentStreak > 0
+                          ? `${currentStreak} día${
+                              currentStreak === 1 ? "" : "s"
+                            } seguidos`
+                          : "Sin racha activa"}
+                      </p>
+                      {currentStreak > 0 && (
+                        <p className="text-[11px] text-emerald-700 mt-0.5">
+                          ¡Sigue así! Mantén tu práctica viva un día más 💚
                         </p>
-                        <p className="text-sm font-semibold">
-                          {lastPractice
-                            ? formatDateTime(lastPractice)
-                            : "Aún no registras prácticas"}
-                        </p>
-                      </div>
-
-                      <div className="my-1 h-px w-full bg-emerald-50" />
-
-                      <div className="space-y-1">
-                        <p className="text-[11px] text-muted-foreground">
-                          Racha actual
-                        </p>
-                        <p className="text-sm font-semibold">
-                          {currentStreak > 0
-                            ? `${currentStreak} día${
-                                currentStreak === 1 ? "" : "s"
-                              } seguidos`
-                            : "Sin racha activa"}
-                        </p>
-
-                        {/* Barrita de constancia */}
-                        <div className="mt-1 space-y-1.5">
-                          <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                            <span>Constancia mensual</span>
-                            <span className="font-medium text-emerald-700">
-                              {Math.min(currentStreak, 14)}/14 días
-                            </span>
-                          </div>
-                          <div className="h-1.5 w-full overflow-hidden rounded-full bg-emerald-50">
-                            <motion.div
-                              className="h-full rounded-full bg-emerald-500"
-                              initial={{ width: 0 }}
-                              animate={{
-                                width: `${Math.min(
-                                  100,
-                                  Math.round(
-                                    (Math.min(currentStreak, 14) / 14) * 100
-                                  )
-                                )}%`,
-                              }}
-                              transition={{ duration: 0.5, delay: 0.1 }}
-                            />
-                          </div>
-                        </div>
-
-                        {currentStreak > 0 && (
-                          <p className="text-[11px] text-emerald-700 mt-1">
-                            ¡Sigue así! Mantén tu práctica viva un día más 💚
-                          </p>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                </motion.div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
 
               {/* Últimas clases completadas */}
-              <motion.div
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, delay: 0.1 }}
-              >
-                <Card className="border-emerald-50 bg-white/90">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm">
-                      Últimas clases que marcaste como completadas
-                    </CardTitle>
-                    <CardDescription className="text-xs">
-                      Un pequeño historial de tus prácticas más recientes.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-2 text-xs">
-                    {lastCompletedClasses.length === 0 && (
-                      <p className="text-muted-foreground">
-                        Aún no has marcado clases como completadas. Cuando lo
-                        hagas, verás aquí tu historial reciente.
-                      </p>
-                    )}
+              <Card className="border-emerald-50 bg-white/90">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm">
+                    Últimas clases que marcaste como completadas
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    Un pequeño historial de tus prácticas más recientes.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2 text-xs">
+                  {lastCompletedClasses.length === 0 && (
+                    <p className="text-muted-foreground">
+                      Aún no has marcado clases como completadas. Cuando lo
+                      hagas, verás aquí tu historial reciente.
+                    </p>
+                  )}
 
-                    {lastCompletedClasses.length > 0 && (
-                      <div className="space-y-2">
-                        {lastCompletedClasses.map((item) => (
-                          <motion.div
-                            key={item.id + item.completed_at}
-                            className="flex flex-col gap-1 rounded-md border border-emerald-50 bg-white px-3 py-2 md:flex-row md:items-center md:justify-between"
-                            initial={{ opacity: 0, y: 4 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ duration: 0.2 }}
-                            whileHover={{ y: -1 }}
+                  {lastCompletedClasses.length > 0 && (
+                    <div className="space-y-2">
+                      {lastCompletedClasses.map((item) => (
+                        <div
+                          key={`${item.id}-${item.completed_at}`}
+                          className="flex flex-col gap-1 rounded-md border border-emerald-50 bg-white px-3 py-2 md:flex-row md:items-center md:justify-between"
+                        >
+                          <div>
+                            <p className="font-medium line-clamp-1">
+                              {item.title}
+                            </p>
+                            <p className="text-[11px] text-muted-foreground">
+                              Completada el{" "}
+                              <span className="font-medium">
+                                {formatDate(item.completed_at)}
+                              </span>
+                              {item.durationMinutes && (
+                                <>
+                                  {" · "}
+                                  {item.durationMinutes} min
+                                </>
+                              )}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            className="mt-1 text-[11px] text-emerald-700 underline-offset-2 hover:underline md:mt-0"
+                            onClick={() => router.push(`/classes/${item.id}`)}
                           >
-                            <div>
-                              <p className="font-medium line-clamp-1">
-                                {item.title}
-                              </p>
-                              <p className="text-[11px] text-muted-foreground">
-                                Completada el{" "}
-                                <span className="font-medium">
-                                  {formatDate(item.completed_at)}
-                                </span>
-                                {item.durationMinutes && (
-                                  <>
-                                    {" · "}
-                                    {item.durationMinutes} min
-                                  </>
-                                )}
-                              </p>
-                            </div>
-                            <button
-                              type="button"
-                              className="mt-1 text-[11px] text-emerald-700 underline-offset-2 hover:underline md:mt-0"
-                              onClick={() => router.push(`/classes/${item.id}`)}
-                            >
-                              Volver a ver la clase
-                            </button>
-                          </motion.div>
-                        ))}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </motion.div>
-            </motion.section>
+                            Volver a ver la clase
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </section>
 
-            {/* Historial mensual */}
+            {/* Historial mensual + gráfica */}
             {monthOptions.length > 0 && (
               <section className="space-y-3">
                 <Card className="border-emerald-50 bg-white/95">
@@ -616,11 +573,50 @@ export default function ProfilePage() {
                       Historial mensual de práctica
                     </CardTitle>
                     <CardDescription className="text-xs">
-                      Filtra tus clases completadas por mes para ver cómo ha
-                      ido tu constancia.
+                      Filtra tus clases completadas por mes y mira cómo tu
+                      práctica se ha ido acumulando.
                     </CardDescription>
                   </CardHeader>
-                  <CardContent className="space-y-3 text-xs">
+                  <CardContent className="space-y-4 text-xs">
+                    {/* Gráfica de minutos por mes */}
+                    {chartData.length > 0 && (
+                      <div className="h-40 w-full md:h-48">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={chartData}>
+                            <CartesianGrid
+                              strokeDasharray="3 3"
+                              stroke="#e5f4ec"
+                              vertical={false}
+                            />
+                            <XAxis
+                              dataKey="month"
+                              tick={{ fontSize: 10 }}
+                              axisLine={false}
+                              tickLine={false}
+                            />
+                            <YAxis
+                              tick={{ fontSize: 10 }}
+                              axisLine={false}
+                              tickLine={false}
+                            />
+                            <Tooltip
+                              contentStyle={{
+                                borderRadius: 12,
+                                border: "1px solid #bbf7d0",
+                                fontSize: 11,
+                              }}
+                              formatter={(value) => [`${value} min`, "Tiempo"]}
+                            />
+                            <Bar
+                              dataKey="minutes"
+                              radius={[6, 6, 0, 0]}
+                              fill="#22c55e"
+                            />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
+
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <p className="text-muted-foreground max-w-sm">
                         Elige un mes para ver solo las clases que completaste en
@@ -693,7 +689,9 @@ export default function ProfilePage() {
                               <button
                                 type="button"
                                 className="mt-1 text-[11px] text-emerald-700 underline-offset-2 hover:underline md:mt-0"
-                                onClick={() => router.push(`/classes/${item.id}`)}
+                                onClick={() =>
+                                  router.push(`/classes/${item.id}`)
+                                }
                               >
                                 Ver detalle de la clase
                               </button>
