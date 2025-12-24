@@ -1,78 +1,144 @@
-// src/app/estudio/page.tsx
 import Link from "next/link";
+import { ArrowLeft, HeartHandshake, Sparkles } from "lucide-react";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 export default function EstudioPage() {
+  const currentYear = new Date().getFullYear();
+
   return (
-    <div className="min-h-[calc(100vh-3.5rem)] bg-gradient-to-b from-emerald-50/40 to-white">
-      <main className="mx-auto max-w-3xl px-4 py-10 md:py-16 space-y-6">
-        <header className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-emerald-500">
-            Sobre PilatesFlow
-          </p>
-          <h1 className="text-2xl md:text-3xl font-semibold text-neutral-900">
-            Un pequeño estudio digital dedicado a Aksaya Studio
-          </h1>
-          <p className="text-sm md:text-base text-muted-foreground">
-            PilatesFlow nació como un prototipo cuidado para imaginar cómo se
-            vería un estudio de Pilates llevado a la pantalla, sin perder la
-            calidez de una clase presencial.
-          </p>
-        </header>
-
-        <section className="space-y-3 text-sm md:text-base text-neutral-700">
-          <p>
-            La idea es simple: crear un lugar donde las alumnas tengan claridad
-            sobre sus clases, puedan repetir sesiones guiadas en video y
-            sientan que su práctica tiene un hilo durante el mes.
-          </p>
-          <p>
-            Este prototipo está{" "}
-            <span className="font-medium">dedicado a Aksaya Studio</span> y a
-            todas las personas que sostienen espacios de movimiento consciente,
-            respiración presente y cuidado del cuerpo.
-          </p>
-          <p>
-            No es aún una plataforma comercial ni un producto terminado, sino
-            una base viva para explorar: agenda, clases on-demand y seguimiento
-            suave del progreso de cada alumna.
-          </p>
-        </section>
-
-        <section className="space-y-3 text-sm md:text-base text-neutral-700">
-          <h2 className="text-lg font-semibold text-neutral-900">
-            Qué puedes encontrar aquí
-          </h2>
-          <ul className="list-disc space-y-1 pl-5">
-            <li>Un catálogo simple de clases con nivel, enfoque y duración.</li>
-            <li>Sesiones con video para practicar en casa o donde estés.</li>
-            <li>Un espacio de alumna con resumen de práctica y racha.</li>
-          </ul>
-          <p className="text-sm text-muted-foreground">
-            Todo esto es parte de un recorrido de diseño y desarrollo, más que
-            un producto final. La intención principal es aprender, explorar y
-            abrir la puerta a futuros estudios digitales.
-          </p>
-        </section>
-
-        <footer className="pt-4 text-sm text-muted-foreground">
-          <p>
-            Si llegaste hasta aquí curioseando el prototipo, puedes volver a la{" "}
-            <Link
-              href="/"
-              className="font-medium text-emerald-700 underline-offset-2 hover:underline"
-            >
-              página principal
-            </Link>{" "}
-            o explorar las{" "}
-            <Link
-              href="/classes"
-              className="font-medium text-emerald-700 underline-offset-2 hover:underline"
-            >
-              clases disponibles
+    <div className="min-h-[calc(100vh-3.5rem)] bg-gradient-to-b from-emerald-50/60 via-white to-white">
+      <main className="mx-auto max-w-4xl px-4 py-8 md:py-10 space-y-8">
+        {/* Volver */}
+        <div className="flex items-center justify-between gap-2">
+          <Button
+            asChild
+            variant="ghost"
+            size="sm"
+            className="gap-2 text-xs text-emerald-800"
+          >
+            <Link href="/">
+              <ArrowLeft className="h-4 w-4" />
+              Volver al inicio
             </Link>
-            .
+          </Button>
+          <p className="text-[11px] uppercase tracking-[0.2em] text-emerald-500">
+            Estudio · Aksaya x PilatesFlow
           </p>
-        </footer>
+        </div>
+
+        {/* Header principal */}
+        <section className="space-y-3">
+          <h1 className="text-2xl md:text-3xl font-semibold text-neutral-900">
+            Aksaya Studio &amp; PilatesFlow
+          </h1>
+          <p className="text-sm md:text-base text-muted-foreground max-w-2xl">
+            Este espacio digital nace como un{" "}
+            <span className="font-medium text-emerald-800">
+              prototipo dedicado a Aksaya Studio
+            </span>
+            : un lugar para que la práctica de Pilates se sienta accesible,
+            amorosa y posible, incluso en semanas caóticas.
+          </p>
+        </section>
+
+        {/* Sobre Aksaya & la práctica */}
+        <section className="grid gap-4 md:grid-cols-2">
+          <Card className="border-emerald-100 bg-white/90">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-100">
+                  <Sparkles className="h-4 w-4 text-emerald-700" />
+                </span>
+                Sobre el estudio
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="text-xs md:text-sm text-muted-foreground space-y-2">
+              <p>
+                Aksaya es un espacio que honra el{" "}
+                <span className="font-medium text-emerald-800">
+                  movimiento consciente, la respiración y la presencia
+                </span>
+                . No se trata solo de “hacer ejercicios”, sino de volver al
+                cuerpo como refugio.
+              </p>
+              <p>
+                Las clases están pensadas para acompañar procesos reales:
+                maternidad, cambios de ciclo, momentos de mucho trabajo,
+                tránsito emocional… siempre desde la suavidad.
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-emerald-100 bg-white/90">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-100">
+                  <Sparkles className="h-4 w-4 text-emerald-700" />
+                </span>
+                Por qué existe PilatesFlow
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="text-xs md:text-sm text-muted-foreground space-y-2">
+              <p>
+                PilatesFlow nace como{" "}
+                <span className="font-medium text-emerald-800">
+                  herramienta para ordenar clases, horarios y prácticas
+                  on-demand
+                </span>{" "}
+                sin perder el alma del estudio.
+              </p>
+              <p>
+                El objetivo es que las alumnas puedan ver con claridad sus
+                sesiones, repetir sus favoritas y sentir que su práctica tiene
+                un hilo que las sostiene en el tiempo.
+              </p>
+            </CardContent>
+          </Card>
+        </section>
+
+        {/* Dedicación a Gilsa / tono personal */}
+        <section>
+          <Card className="border-emerald-100 bg-emerald-50/70">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-600 text-emerald-50">
+                  <HeartHandshake className="h-4 w-4" />
+                </span>
+                Una dedicación muy concreta
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-xs md:text-sm text-emerald-900">
+              <p>
+                Este proyecto está pensado como un{" "}
+                <span className="font-semibold">
+                  gesto de cariño, admiración y apoyo a la visión de Aksaya y de
+                  Gilsa
+                </span>
+                : sostener a otras personas a través del cuerpo, la respiración
+                y la presencia.
+              </p>
+              <p>
+                Todo lo que ves aquí es un{" "}
+                <span className="font-medium">
+                  laboratorio digital para imaginar cómo podría verse la
+                  plataforma si algún día decidimos llevarla a producción
+                </span>{" "}
+                con pagos, planes reales y más herramientas para el estudio.
+              </p>
+            </CardContent>
+          </Card>
+        </section>
+
+        {/* Nota de prototipo */}
+        <section className="text-[11px] md:text-xs text-muted-foreground">
+          <p>
+            {currentYear} · PilatesFlow es un prototipo de estudio digital
+            dedicado a Aksaya Studio. No reemplaza la experiencia presencial,
+            sino que la acompaña y extiende hacia los días en que solo es
+            posible practicar desde casa.
+          </p>
+        </section>
       </main>
     </div>
   );

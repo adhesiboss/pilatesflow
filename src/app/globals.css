@@ -1,3 +1,6 @@
+/* stylelint-disable rule-empty-line-before */
+/* vscode-css-languageservice ignore unknownAtRules */
+
 @import "tailwindcss";
 @import "tw-animate-css";
 
@@ -119,4 +122,19 @@
   body {
     @apply bg-background text-foreground;
   }
+/* Ocultar el badge de Next en dev */
+  [data-next-badge-root] {
+    display: none !important;
+  }
+  
+}
+
+/* Ocultar el badge de Next en modo dev */
+/* 🔹 Forzar ocultar el badge de Next en dev */
+[data-next-badge-root],
+[data-next-badge] {
+  display: none !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
 }

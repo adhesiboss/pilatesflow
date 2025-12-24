@@ -1,90 +1,109 @@
-// src/app/aviso/page.tsx
 import Link from "next/link";
+import { AlertCircle, ArrowLeft, ShieldCheck } from "lucide-react";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 export default function AvisoPage() {
-  const year = new Date().getFullYear();
+  const currentYear = new Date().getFullYear();
 
   return (
-    <div className="min-h-[calc(100vh-3.5rem)] bg-gradient-to-b from-emerald-50/30 to-white">
-      <main className="mx-auto max-w-3xl px-4 py-10 md:py-16 space-y-6">
-        <header className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-emerald-500">
-            Aviso importante
+    <div className="min-h-[calc(100vh-3.5rem)] bg-gradient-to-b from-emerald-50/60 via-white to-white">
+      <main className="mx-auto max-w-3xl px-4 py-8 md:py-10 space-y-8">
+        {/* Volver */}
+        <div className="flex items-center justify-between gap-2">
+          <Button
+            asChild
+            variant="ghost"
+            size="sm"
+            className="gap-2 text-xs text-emerald-800"
+          >
+            <Link href="/">
+              <ArrowLeft className="h-4 w-4" />
+              Volver al inicio
+            </Link>
+          </Button>
+          <p className="text-[11px] uppercase tracking-[0.2em] text-emerald-500">
+            Aviso · Prototipo PilatesFlow
           </p>
+        </div>
+
+        {/* Header */}
+        <section className="space-y-3">
           <h1 className="text-2xl md:text-3xl font-semibold text-neutral-900">
-            Prototipo en modo demostración
+            Aviso importante sobre este sitio
           </h1>
           <p className="text-sm md:text-base text-muted-foreground">
-            PilatesFlow no es todavía una plataforma comercial ni procesa pagos
-            reales. Es un entorno de prueba y demostración.
-          </p>
-        </header>
-
-        <section className="space-y-3 text-sm md:text-base text-neutral-700">
-          <p>
-            Este sitio forma parte de un{" "}
-            <span className="font-medium">prototipo de estudio digital</span>,
-            creado con fines de exploración, diseño y desarrollo. La
-            funcionalidad de reservas, planes y progreso es simulada con datos
-            de prueba.
-          </p>
-          <p>
-            Aunque la interfaz busca representar una experiencia realista para
-            alumnas e instructoras,{" "}
-            <span className="font-medium">
-              no se realizan cobros, contratos ni compromisos comerciales
+            PilatesFlow, tal como lo ves hoy, es un{" "}
+            <span className="font-medium text-emerald-800">
+              prototipo funcional
             </span>{" "}
-            a través de esta plataforma.
-          </p>
-          <p>
-            Cualquier referencia a planes, precios o capacidad de clases es
-            ilustrativa y puede cambiar o desaparecer sin aviso previo.
+            pensado para mostrar el flujo de un estudio digital de Pilates
+            dedicado a Aksaya Studio.
           </p>
         </section>
 
-        <section className="space-y-3 text-sm md:text-base text-neutral-700">
-          <h2 className="text-lg font-semibold text-neutral-900">
-            Uso de la información
-          </h2>
+        {/* Bloque principal de aviso */}
+        <Card className="border-amber-100 bg-amber-50/80">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-sm text-amber-900">
+              <AlertCircle className="h-4 w-4" />
+              Sin cobros reales ni contratos
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-xs md:text-sm text-amber-900/90">
+            <p>
+              Este sitio no realiza{" "}
+              <span className="font-semibold">
+                cobros reales, suscripciones ni contratos comerciales
+              </span>{" "}
+              con las personas que lo utilizan.
+            </p>
+            <p>
+              Cualquier referencia a{" "}
+              <span className="font-medium">“planes”, “precios” o “pagos”</span>{" "}
+              es solo demostrativa y forma parte del diseño de la experiencia de
+              usuario.
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Otros puntos claros y simples */}
+        <Card className="border-emerald-100 bg-white/90">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <ShieldCheck className="h-4 w-4 text-emerald-700" />
+              Información y práctica
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-xs md:text-sm text-muted-foreground">
+            <p>
+              Las clases, textos y ejemplos de sesiones que aparecen en la
+              plataforma tienen un carácter{" "}
+              <span className="font-medium">
+                ilustrativo y orientado a la práctica personal
+              </span>
+              .
+            </p>
+            <p>
+              La práctica de Pilates y movimiento consciente debe adaptarse a
+              cada cuerpo y condición. Siempre es recomendable{" "}
+              <span className="font-medium">
+                consultar con profesionales de salud
+              </span>{" "}
+              cuando existan lesiones, condiciones médicas o dudas específicas.
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Cierre */}
+        <section className="space-y-2 text-[11px] md:text-xs text-muted-foreground">
           <p>
-            Los datos que se cargan en el prototipo (por ejemplo, nombres de
-            clases, horarios o correos de prueba) están orientados a simular el
-            funcionamiento de la plataforma. No se recomienda usar información
-            sensible o confidencial en este entorno.
-          </p>
-          <p className="text-sm text-muted-foreground">
-            Si en el futuro PilatesFlow evoluciona hacia un servicio real, se
-            publicarán términos y condiciones formales, así como políticas de
-            privacidad claras.
+            {currentYear} · PilatesFlow · Prototipo dedicado a Aksaya Studio. La
+            versión productiva, en caso de desarrollarse, incorporará términos y
+            condiciones completos, políticas de privacidad y contratos de
+            servicio adecuados.
           </p>
         </section>
-
-        <footer className="pt-4 text-sm text-muted-foreground">
-          <p className="mb-2">
-            © {year} PilatesFlow · Prototipo dedicado a{" "}
-            <span className="font-medium text-emerald-700">
-              Aksaya Studio
-            </span>
-            .
-          </p>
-          <p>
-            Puedes volver a la{" "}
-            <Link
-              href="/"
-              className="font-medium text-emerald-700 underline-offset-2 hover:underline"
-            >
-              página principal
-            </Link>{" "}
-            o conocer más en la sección{" "}
-            <Link
-              href="/estudio"
-              className="font-medium text-emerald-700 underline-offset-2 hover:underline"
-            >
-              sobre el estudio
-            </Link>
-            .
-          </p>
-        </footer>
       </main>
     </div>
   );
